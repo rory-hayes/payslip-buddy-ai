@@ -14,7 +14,265 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      anomalies: {
+        Row: {
+          created_at: string | null
+          id: string
+          message: string
+          muted: boolean | null
+          payslip_id: string
+          severity: string | null
+          snoozed_until: string | null
+          type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          message: string
+          muted?: boolean | null
+          payslip_id: string
+          severity?: string | null
+          snoozed_until?: string | null
+          type: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          message?: string
+          muted?: boolean | null
+          payslip_id?: string
+          severity?: string | null
+          snoozed_until?: string | null
+          type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "anomalies_payslip_id_fkey"
+            columns: ["payslip_id"]
+            isOneToOne: false
+            referencedRelation: "payslips"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      files: {
+        Row: {
+          created_at: string | null
+          file_name: string
+          file_size: number | null
+          id: string
+          s3_key_original: string
+          s3_key_redacted: string | null
+          sha256: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          file_name: string
+          file_size?: number | null
+          id?: string
+          s3_key_original: string
+          s3_key_redacted?: string | null
+          sha256?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          file_name?: string
+          file_size?: number | null
+          id?: string
+          s3_key_original?: string
+          s3_key_redacted?: string | null
+          sha256?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      kb: {
+        Row: {
+          category: string
+          created_at: string | null
+          id: string
+          link: string | null
+          note: string | null
+          region: string
+          sort_order: number | null
+          title: string
+        }
+        Insert: {
+          category: string
+          created_at?: string | null
+          id?: string
+          link?: string | null
+          note?: string | null
+          region: string
+          sort_order?: number | null
+          title: string
+        }
+        Update: {
+          category?: string
+          created_at?: string | null
+          id?: string
+          link?: string | null
+          note?: string | null
+          region?: string
+          sort_order?: number | null
+          title?: string
+        }
+        Relationships: []
+      }
+      payslips: {
+        Row: {
+          confidence_overall: number | null
+          conflict: boolean | null
+          country: string | null
+          created_at: string | null
+          currency: string | null
+          employer_name: string | null
+          explainer_text: string | null
+          file_id: string
+          gross: number | null
+          id: string
+          net: number | null
+          ni_prsi: number | null
+          other_deductions: Json | null
+          pay_date: string | null
+          pension_employee: number | null
+          pension_employer: number | null
+          period_end: string | null
+          period_start: string | null
+          period_type: string | null
+          review_required: boolean | null
+          student_loan: number | null
+          tax_income: number | null
+          updated_at: string | null
+          user_id: string
+          ytd: Json | null
+        }
+        Insert: {
+          confidence_overall?: number | null
+          conflict?: boolean | null
+          country?: string | null
+          created_at?: string | null
+          currency?: string | null
+          employer_name?: string | null
+          explainer_text?: string | null
+          file_id: string
+          gross?: number | null
+          id?: string
+          net?: number | null
+          ni_prsi?: number | null
+          other_deductions?: Json | null
+          pay_date?: string | null
+          pension_employee?: number | null
+          pension_employer?: number | null
+          period_end?: string | null
+          period_start?: string | null
+          period_type?: string | null
+          review_required?: boolean | null
+          student_loan?: number | null
+          tax_income?: number | null
+          updated_at?: string | null
+          user_id: string
+          ytd?: Json | null
+        }
+        Update: {
+          confidence_overall?: number | null
+          conflict?: boolean | null
+          country?: string | null
+          created_at?: string | null
+          currency?: string | null
+          employer_name?: string | null
+          explainer_text?: string | null
+          file_id?: string
+          gross?: number | null
+          id?: string
+          net?: number | null
+          ni_prsi?: number | null
+          other_deductions?: Json | null
+          pay_date?: string | null
+          pension_employee?: number | null
+          pension_employer?: number | null
+          period_end?: string | null
+          period_start?: string | null
+          period_type?: string | null
+          review_required?: boolean | null
+          student_loan?: number | null
+          tax_income?: number | null
+          updated_at?: string | null
+          user_id?: string
+          ytd?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payslips_file_id_fkey"
+            columns: ["file_id"]
+            isOneToOne: false
+            referencedRelation: "files"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string | null
+          email: string | null
+          full_name: string | null
+          id: string
+          updated_at: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string | null
+          email?: string | null
+          full_name?: string | null
+          id: string
+          updated_at?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string | null
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      settings: {
+        Row: {
+          created_at: string | null
+          locale: string | null
+          marketing_opt_in: boolean | null
+          region: string | null
+          retention_days: number | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          locale?: string | null
+          marketing_opt_in?: boolean | null
+          region?: string | null
+          retention_days?: number | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          locale?: string | null
+          marketing_opt_in?: boolean | null
+          region?: string | null
+          retention_days?: number | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
