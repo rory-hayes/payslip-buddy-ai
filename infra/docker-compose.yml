@@ -1,0 +1,34 @@
+version: '3.9'
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: infra/dockerfiles/api.Dockerfile
+    env_file:
+      - ../apps/api/.env.sample
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+    command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 --reload
+
+  worker:
+    build:
+      context: ..
+      dockerfile: infra/dockerfiles/worker.Dockerfile
+    env_file:
+      - ../apps/api/.env.sample
+    depends_on:
+      - redis
+    command: celery -A apps.worker.celery_app.celery_app worker -l info
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  clamav:
+    image: clamav/clamav:stable
+    restart: unless-stopped
+    ports:
+      - "3310:3310"
