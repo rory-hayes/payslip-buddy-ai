@@ -20,6 +20,7 @@ services:
       - ../apps/api/.env.sample
     depends_on:
       - redis
+      - clamav
     command: celery -A apps.worker.celery_app.celery_app worker -l info
 
   redis:

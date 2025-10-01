@@ -5,6 +5,7 @@ from typing import Any, Dict
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from redis import Redis
 
 from apps.api.auth import AuthenticatedUser, get_current_user, require_internal_token
 from apps.common.config import get_settings
@@ -22,6 +23,11 @@ async def healthz() -> Dict[str, Any]:
         supabase.table("jobs").select("id").limit(1).execute()
     except Exception as exc:  # pragma: no cover - connectivity failure path
         raise HTTPException(status_code=503, detail="Supabase unavailable") from exc
+    try:
+        redis_client = Redis.from_url(settings.redis_url)
+        redis_client.ping()
+    except Exception as exc:  # pragma: no cover - connectivity failure path
+        raise HTTPException(status_code=503, detail="Redis unavailable") from exc
     return {"ok": True, "redis_url": settings.redis_url}
 
 

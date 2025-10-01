@@ -1,21 +1,49 @@
 from __future__ import annotations
 
+import base64
+import json
+import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from celery import shared_task
 
+from apps.common.config import get_settings
 from apps.common.models import JobKind, JobStatus
 from apps.common.supabase import get_supabase
 from apps.worker.celery_app import celery_app
+from apps.worker.services.anomalies import PayslipSnapshot, detect_anomalies
+from apps.worker.services.antivirus import AntivirusError, scan_bytes
+from apps.worker.services.cleanup import delete_user_data, retention_cleanup
+from apps.worker.services.llm import LlmResponse, LlmVisionClient, SpendCapExceeded
 from apps.worker.services.merge import (
     LlmExtraction,
     NativeExtraction,
     infer_period_type,
     merge_native_with_llm,
+    normalize_date,
     validate_identity_rule,
 )
-from apps.worker.services.anomalies import PayslipSnapshot, detect_anomalies
+from apps.worker.services.pdf import (
+    PdfText,
+    decrypt_pdf,
+    extract_kv_pairs,
+    extract_text,
+    guess_country,
+    guess_currency,
+    rasterize_first_pages,
+    render_redacted_preview,
+)
+from apps.worker.services.redaction import redact_text
+from apps.worker.services.reports import (
+    build_export_zip,
+    fetch_dossier_payload,
+    generate_dossier_pdf,
+    generate_hr_pack_pdf,
+)
+from apps.worker.services.storage import StorageService, get_storage_service
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _update_job(job_id: str, updates: Dict[str, Any]) -> None:
@@ -35,9 +63,67 @@ def _append_event(user_id: str, event_type: str, payload: Dict[str, Any]) -> Non
     )
 
 
+def _record_redactions(user_id: str, file_id: str, boxes: List[Dict[str, float]]) -> None:
+    supabase = get_supabase()
+    supabase.insert_row(
+        "redactions",
+        {
+            "user_id": user_id,
+            "file_id": file_id,
+            "boxes": boxes,
+        },
+    )
+
+
+def _ensure_storage_service() -> StorageService:
+    return get_storage_service()
+
+
+def _native_parse(text: PdfText) -> NativeExtraction:
+    kvs = extract_kv_pairs(text.raw_text)
+    native = NativeExtraction(
+        employer_name=None,
+        pay_date=None,
+        period_start=None,
+        period_end=None,
+        currency=guess_currency(text.raw_text),
+        country=guess_country(text.raw_text),
+        gross=kvs.get("gross"),
+        net=kvs.get("net"),
+        tax_income=kvs.get("tax_income"),
+        ni_prsi=kvs.get("ni_prsi"),
+        pension_employee=kvs.get("pension_employee"),
+        pension_employer=None,
+        student_loan=kvs.get("student_loan"),
+        other_deductions=None,
+        ytd={},
+        tax_code=None,
+    )
+    return native
+
+
+def _llm_extract(user_id: str, file_id: Optional[str], redacted_images: List[bytes]) -> Optional[LlmResponse]:
+    settings = get_settings()
+    if not settings.openai_api_key:
+        LOGGER.info("OpenAI API key missing; skipping LLM extraction")
+        return None
+    try:
+        client = LlmVisionClient()
+        return client.infer(user_id=user_id, file_id=file_id, redacted_images=redacted_images)
+    except SpendCapExceeded as exc:
+        LOGGER.warning("LLM spend cap reached: %s", exc)
+        _append_event(user_id, "llm_cap_reached", {"message": str(exc)})
+        return None
+    except Exception as exc:  # pragma: no cover - network failure path
+        LOGGER.exception("LLM inference failed: %s", exc)
+        _append_event(user_id, "llm_error", {"message": str(exc)})
+        return None
+
+
 @shared_task(name="jobs.extract")
 def job_extract(job_id: str) -> None:
     supabase = get_supabase()
+    storage = _ensure_storage_service()
     job = supabase.table_select_single("jobs", match={"id": job_id})
     if not job:
         return
@@ -50,42 +136,64 @@ def job_extract(job_id: str) -> None:
         _update_job(job_id, {"status": JobStatus.FAILED.value, "error": "File not found"})
         return
 
-    native = NativeExtraction(
-        employer_name=None,
-        pay_date=None,
-        period_start=None,
-        period_end=None,
-        currency=None,
-        country=None,
-        gross=None,
-        net=None,
-        tax_income=None,
-        ni_prsi=None,
-        pension_employee=None,
-        pension_employer=None,
-        student_loan=None,
-        other_deductions=None,
-        ytd=None,
-        tax_code=None,
-    )
-    llm_payload = {
-        "country": "UK",
-        "currency": "GBP",
-        "gross": 0.0,
-        "net": 0.0,
-        "tax_income": 0.0,
-        "ni_prsi": 0.0,
-        "pension_employee": 0.0,
+    pdf_password = (job.get("meta") or {}).get("pdfPassword")
+
+    try:
+        storage_object = storage.download_pdf(user_id=job["user_id"], file_id=file_row["id"], password=pdf_password)
+        scan_bytes(storage_object.bytes)
+        decrypted_pdf = decrypt_pdf(storage_object.bytes, pdf_password)
+        text = extract_text(decrypted_pdf)
+        native = _native_parse(text)
+        redaction = redact_text(text.raw_text)
+        rasterized = rasterize_first_pages(decrypted_pdf, pages=2)
+        preview_image = redaction.preview_png or rasterized[0].png_bytes
+        storage.upload_bytes(
+            user_id=job["user_id"],
+            name=f"{file_row['id']}_redacted.png",
+            content_type="image/png",
+            data=preview_image,
+        )
+        _record_redactions(job["user_id"], file_row["id"], redaction.boxes)
+        disable_llm = (job.get("meta") or {}).get("disable_llm")
+        llm_response = None
+        if not disable_llm:
+            llm_response = _llm_extract(job["user_id"], job.get("file_id"), [page.png_bytes for page in rasterized])
+    except AntivirusError as exc:
+        _update_job(job_id, {"status": JobStatus.FAILED.value, "error": f"Antivirus detected threat: {exc}"})
+        return
+    except FileNotFoundError:
+        _update_job(job_id, {"status": JobStatus.FAILED.value, "error": "PDF missing"})
+        return
+    except Exception as exc:  # pragma: no cover - fallback path
+        LOGGER.exception("Extraction failure: %s", exc)
+        _update_job(job_id, {"status": JobStatus.FAILED.value, "error": str(exc)})
+        return
+
+    llm_payload = llm_response.payload if llm_response else {
+        "country": native.country or "UK",
+        "currency": native.currency or "GBP",
+        "gross": native.gross or 0.0,
+        "net": native.net or 0.0,
+        "tax_income": native.tax_income or 0.0,
+        "ni_prsi": native.ni_prsi or 0.0,
+        "pension_employee": native.pension_employee or 0.0,
         "pension_employer": 0.0,
-        "student_loan": 0.0,
+        "student_loan": native.student_loan or 0.0,
         "other_deductions": [],
-        "ytd": {},
-        "confidence_overall": 0.0,
+        "ytd": native.ytd or {},
+        "tax_code": native.tax_code,
+        "confidence_overall": 0.4,
     }
+
     merged = merge_native_with_llm(native, LlmExtraction(payload=llm_payload))
     merged["period_type"] = infer_period_type(merged.get("period_start"), merged.get("period_end"))
+    merged["pay_date"] = normalize_date(merged.get("pay_date"))
+    merged["period_start"] = normalize_date(merged.get("period_start"))
+    merged["period_end"] = normalize_date(merged.get("period_end"))
+
     identity_ok = validate_identity_rule(merged)
-    review_required = not identity_ok or merged.get("confidence_overall", 0.0) < 0.9
+    confidence = float(merged.get("confidence_overall") or 0.0)
+    review_required = not identity_ok or confidence < 0.9
 
     payslip_record = {
         "user_id": job["user_id"],
@@ -106,20 +214,36 @@ def job_extract(job_id: str) -> None:
         "student_loan": merged.get("student_loan"),
         "other_deductions": merged.get("other_deductions"),
         "ytd": merged.get("ytd"),
-        "confidence_overall": merged.get("confidence_overall"),
+        "tax_code": merged.get("tax_code"),
+        "confidence_overall": confidence,
         "review_required": review_required,
         "conflict": False,
-        "explainer_text": "Automated extraction placeholder.",
+        "explainer_text": "Automated extraction with native+vision merge.",
     }
     payslip = supabase.insert_row("payslips", payslip_record)
 
-    _append_event(job["user_id"], "extract_complete", {"payslip_id": payslip.get("id")})
+    job_meta = job.get("meta") or {}
+    job_meta.update(
+        {
+            "fields": merged,
+            "confidence": confidence,
+            "reviewRequired": review_required,
+            "imageUrl": f"{job['user_id']}/{file_row['id']}_redacted.png",
+            "highlights": redaction.boxes,
+        }
+    )
+    if llm_response:
+        job_meta["llm"] = {"tokens": llm_response.tokens, "cost": llm_response.cost}
+    if (job.get("meta") or {}).get("disable_llm"):
+        job_meta["llmDisabled"] = True
+
+    _append_event(job["user_id"], "extract_complete", {"payslip_id": payslip.get("id"), "identity_ok": identity_ok})
 
     _update_job(
         job_id,
         {
             "status": JobStatus.NEEDS_REVIEW.value if review_required else JobStatus.DONE.value,
-            "meta": {**(job.get("meta") or {}), "fields": merged, "reviewRequired": review_required},
+            "meta": job_meta,
         },
     )
 
@@ -148,18 +272,26 @@ def job_detect_anomalies(job_id: str) -> None:
         _update_job(job_id, {"status": JobStatus.FAILED.value, "error": "Payslip missing"})
         return
 
-    history_response = supabase.client.table("payslips").select("*").eq("user_id", job["user_id"]).lt("created_at", payslip["created_at"]).order("created_at", desc=True).limit(5).execute()
+    history_response = (
+        supabase.client.table("payslips")
+        .select("*")
+        .eq("user_id", job["user_id"])
+        .lt("created_at", payslip["created_at"])
+        .order("created_at", desc=True)
+        .limit(6)
+        .execute()
+    )
     history_rows = history_response.data or []
     history_snapshots = [
         PayslipSnapshot(
             payslip_id=row.get("id", ""),
-            employer_name=row.get("employer_name", ""),
+            employer_name=row.get("employer_name") or "",
             net=float(row.get("net") or 0.0),
             pension_employee=float(row.get("pension_employee") or 0.0),
             tax_code=row.get("tax_code"),
             ytd=row.get("ytd") or {},
             pay_date=datetime.fromisoformat(row.get("pay_date")) if row.get("pay_date") else datetime.fromtimestamp(0, tz=timezone.utc),
-            deductions={"other": float(row.get("other_deductions") or 0.0)},
+            deductions={label: amount for label, amount in (row.get("other_deductions") or {}).items()} if isinstance(row.get("other_deductions"), dict) else {"other": float(row.get("other_deductions") or 0.0)},
         )
         for row in history_rows
     ]
@@ -171,7 +303,7 @@ def job_detect_anomalies(job_id: str) -> None:
         tax_code=payslip.get("tax_code"),
         ytd=payslip.get("ytd") or {},
         pay_date=datetime.fromisoformat(payslip.get("pay_date")) if payslip.get("pay_date") else datetime.fromtimestamp(0, tz=timezone.utc),
-        deductions={"other": float(payslip.get("other_deductions") or 0.0)},
+        deductions={label: amount for label, amount in (payslip.get("other_deductions") or {}).items()} if isinstance(payslip.get("other_deductions"), dict) else {"other": float(payslip.get("other_deductions") or 0.0)},
     )
     anomalies = detect_anomalies(current_snapshot, history_snapshots)
     for anomaly in anomalies:
@@ -186,6 +318,82 @@ def job_detect_anomalies(job_id: str) -> None:
             },
         )
     _update_job(job_id, {"status": JobStatus.DONE.value, "meta": {"count": len(anomalies)}})
+
+
+@shared_task(name="jobs.dossier")
+def job_dossier(job_id: str) -> None:
+    supabase = get_supabase()
+    storage = _ensure_storage_service()
+    job = supabase.table_select_single("jobs", match={"id": job_id})
+    if not job:
+        return
+    _update_job(job_id, {"status": JobStatus.RUNNING.value})
+    year = (job.get("meta") or {}).get("year") or datetime.now(timezone.utc).year
+    payload = fetch_dossier_payload(job["user_id"], int(year))
+    artifact = generate_dossier_pdf(job["user_id"], payload)
+    stored = storage.upload_bytes(user_id=job["user_id"], name=artifact.filename, content_type=artifact.content_type, data=artifact.bytes)
+    job_meta = job.get("meta") or {}
+    job_meta["download_url"] = stored.path
+    _update_job(job_id, {"status": JobStatus.DONE.value, "meta": job_meta})
+
+
+@shared_task(name="jobs.hr_pack")
+def job_hr_pack(job_id: str) -> None:
+    supabase = get_supabase()
+    storage = _ensure_storage_service()
+    job = supabase.table_select_single("jobs", match={"id": job_id})
+    if not job:
+        return
+    _update_job(job_id, {"status": JobStatus.RUNNING.value})
+    payload = (job.get("meta") or {}).get("payload") or {}
+    artifact = generate_hr_pack_pdf(job["user_id"], payload)
+    stored = storage.upload_bytes(user_id=job["user_id"], name=artifact.filename, content_type=artifact.content_type, data=artifact.bytes)
+    job_meta = job.get("meta") or {}
+    job_meta["download_url"] = stored.path
+    _update_job(job_id, {"status": JobStatus.DONE.value, "meta": job_meta})
+
+
+@shared_task(name="jobs.export_all")
+def job_export_all(job_id: str) -> None:
+    supabase = get_supabase()
+    storage = _ensure_storage_service()
+    job = supabase.table_select_single("jobs", match={"id": job_id})
+    if not job:
+        return
+    _update_job(job_id, {"status": JobStatus.RUNNING.value})
+    payslips = (
+        supabase.client.table("payslips").select("*").eq("user_id", job["user_id"]).execute().data or []
+    )
+    files = supabase.client.table("files").select("*").eq("user_id", job["user_id"]).execute().data or []
+    anomalies = (
+        supabase.client.table("anomalies").select("*").eq("user_id", job["user_id"]).execute().data or []
+    )
+    settings = (
+        supabase.client.table("settings").select("*").eq("user_id", job["user_id"]).execute().data or []
+    )
+    artifact = build_export_zip(job["user_id"], payslips=payslips, files=files, anomalies=anomalies, settings=settings[0] if settings else {})
+    stored = storage.upload_bytes(user_id=job["user_id"], name=artifact.filename, content_type=artifact.content_type, data=artifact.bytes)
+    job_meta = job.get("meta") or {}
+    job_meta["download_url"] = stored.path
+    _update_job(job_id, {"status": JobStatus.DONE.value, "meta": job_meta})
+
+
+@shared_task(name="jobs.delete_all")
+def job_delete_all(job_id: str, purge_all: bool = False) -> None:
+    supabase = get_supabase()
+    job = supabase.table_select_single("jobs", match={"id": job_id})
+    if not job:
+        return
+    _update_job(job_id, {"status": JobStatus.RUNNING.value})
+    delete_user_data(job["user_id"], purge_all=purge_all or bool((job.get("meta") or {}).get("purge_all")))
+    _update_job(job_id, {"status": JobStatus.DONE.value, "meta": job.get("meta") or {}})
+
+
+@shared_task(name="cron.retention_cleanup")
+def job_retention_cleanup() -> None:
+    counts = retention_cleanup()
+    for user_id, removed in counts.items():
+        _append_event(user_id, "retention_cleanup", {"removed": removed})
 
 
 @shared_task(name="jobs.generic")
