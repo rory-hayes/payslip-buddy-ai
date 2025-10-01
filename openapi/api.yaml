@@ -1,0 +1,211 @@
+openapi: 3.1.0
+info:
+  title: Payslip Companion API
+  version: 1.0.0
+servers:
+  - url: https://api.payslip-companion.local
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      operationId: getHealthz
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  redis_url:
+                    type: string
+                required:
+                  - ok
+  /internal/jobs/trigger:
+    post:
+      summary: Trigger a job manually
+      operationId: triggerJob
+      security:
+        - internalToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_id:
+                  type: string
+                kind:
+                  type: string
+                  enum:
+                    - extract
+                    - detect_anomalies
+                    - hr_pack
+                    - dossier
+                    - delete_all
+                    - export_all
+                file_id:
+                  type: string
+                  nullable: true
+                meta:
+                  type: object
+                  additionalProperties: true
+              required:
+                - user_id
+                - kind
+      responses:
+        '202':
+          description: Job queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+  /internal/jobs/{id}:
+    get:
+      summary: Get job details
+      operationId: getJob
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '404':
+          description: Job not found
+  /dossier/preview:
+    get:
+      summary: Preview dossier aggregates for a year
+      operationId: getDossierPreview
+      parameters:
+        - in: query
+          name: year
+          required: true
+          schema:
+            type: integer
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Dossier preview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DossierResponse'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    internalToken:
+      type: apiKey
+      in: header
+      name: X-Internal-Token
+  schemas:
+    Job:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        file_id:
+          type: string
+          nullable: true
+        kind:
+          type: string
+        status:
+          type: string
+        error:
+          type: string
+          nullable: true
+        meta:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+        updated_at:
+          type: string
+      required:
+        - id
+        - user_id
+        - kind
+        - status
+    DossierResponse:
+      type: object
+      properties:
+        totals:
+          type: object
+          properties:
+            gross:
+              type: number
+            net:
+              type: number
+            tax_income:
+              type: number
+            ni_prsi:
+              type: number
+            pension_employee:
+              type: number
+            pension_employer:
+              type: number
+          required:
+            - gross
+            - net
+            - tax_income
+            - ni_prsi
+            - pension_employee
+            - pension_employer
+        months:
+          type: array
+          items:
+            type: object
+            properties:
+              month:
+                type: string
+              gross:
+                type: number
+              net:
+                type: number
+              tax_income:
+                type: number
+              ni_prsi:
+                type: number
+              pension_employee:
+                type: number
+            required:
+              - month
+              - gross
+              - net
+              - tax_income
+              - ni_prsi
+              - pension_employee
+        checklist:
+          type: array
+          items:
+            type: object
+            properties:
+              title:
+                type: string
+              note:
+                type: string
+              link:
+                type: string
+            required:
+              - title
+              - note
+              - link
+      required:
+        - totals
+        - months
+        - checklist

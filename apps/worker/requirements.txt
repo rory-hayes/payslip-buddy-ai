@@ -1,0 +1,13 @@
+celery==5.3.6
+redis==5.0.4
+supabase==2.3.4
+python-dotenv==1.0.1
+PyMuPDF==1.24.4
+pdfplumber==0.11.4
+openai==1.30.1
+weasyprint==61.0
+python-dateutil==2.9.0
+pydantic==2.7.1
+numpy==1.26.4
+pillow==10.3.0
+python-jose==3.3.0
