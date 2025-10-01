@@ -20,7 +20,7 @@ export default function Settings() {
   const { user } = useAuth();
   const { toast } = useToast();
 
-  // Poll for active jobs
+  // Poll for active and recent jobs
   const { data: activeJobs, refetch: refetchJobs } = useQuery({
     queryKey: ['active-jobs'],
     queryFn: async () => {
@@ -31,8 +31,8 @@ export default function Settings() {
         .select('*')
         .eq('user_id', user.id)
         .in('kind', ['delete_all', 'export_all'])
-        .in('status', ['queued', 'running'])
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(5);
       
       if (error) throw error;
       return data as Job[];
@@ -41,8 +41,9 @@ export default function Settings() {
     enabled: !!user,
   });
 
-  const deleteAllJob = activeJobs?.find(j => j.kind === 'delete_all');
-  const exportAllJob = activeJobs?.find(j => j.kind === 'export_all');
+  const deleteAllJob = activeJobs?.find(j => j.kind === 'delete_all' && ['queued', 'running'].includes(j.status));
+  const exportAllJob = activeJobs?.find(j => j.kind === 'export_all' && ['queued', 'running'].includes(j.status));
+  const exportAllJobDone = activeJobs?.find(j => j.kind === 'export_all' && j.status === 'done');
 
   useEffect(() => {
     loadSettings();
@@ -337,6 +338,26 @@ export default function Settings() {
                       Export in progress: {exportAllJob.status}
                     </span>
                   </div>
+                  <p className="text-xs text-blue-700 mt-1">
+                    We'll show a download link here when it's ready.
+                  </p>
+                </div>
+              )}
+
+              {/* Recent export download link */}
+              {exportAllJobDone?.meta?.download_url && (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-sm font-medium text-green-900 mb-2">
+                    Recent export ready:
+                  </p>
+                  <a 
+                    href={exportAllJobDone.meta.download_url as string} 
+                    target="_blank" 
+                    rel="noreferrer" 
+                    className="text-sm text-blue-600 underline hover:text-blue-800"
+                  >
+                    Download Export
+                  </a>
                 </div>
               )}
             </CardContent>

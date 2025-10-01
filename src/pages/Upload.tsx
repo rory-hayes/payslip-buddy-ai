@@ -13,6 +13,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { PasswordPromptModal } from '@/components/PasswordPromptModal';
 import CryptoJS from 'crypto-js';
 import { Job } from '@/types/database';
+import { JobKind, JobStatus } from '@/types/jobs';
 
 export default function Upload() {
   const [file, setFile] = useState<File | null>(null);
@@ -326,15 +327,20 @@ export default function Upload() {
                           </p>
 
                           {/* Password protection checkbox */}
-                          <div className="flex items-center justify-center gap-2 mb-4">
-                            <Checkbox
-                              id="password-protected"
-                              checked={passwordProtected}
-                              onCheckedChange={(checked) => setPasswordProtected(!!checked)}
-                            />
-                            <Label htmlFor="password-protected" className="cursor-pointer">
-                              This PDF is password-protected
-                            </Label>
+                          <div className="flex flex-col items-center justify-center gap-2 mb-4">
+                            <div className="flex items-center gap-2">
+                              <Checkbox
+                                id="password-protected"
+                                checked={passwordProtected}
+                                onCheckedChange={(checked) => setPasswordProtected(!!checked)}
+                              />
+                              <Label htmlFor="password-protected" className="cursor-pointer">
+                                This PDF is password-protected
+                              </Label>
+                            </div>
+                            <p className="text-xs text-muted-foreground text-center max-w-md">
+                              Most employer portals show a lock icon or ask for a password when opening the file.
+                            </p>
                           </div>
 
                           <div className="flex gap-3 justify-center">
@@ -381,17 +387,23 @@ export default function Upload() {
 
                   {/* Progress Steps */}
                   <div className="space-y-4">
-                    <div className={`flex items-center gap-3 p-3 rounded-lg ${
-                      ['done', 'running', 'needs_review', 'failed'].includes(currentJob.status) ? 'bg-green-50 border border-green-200' : 'bg-muted'
-                    }`}>
+                    <div 
+                      className={`flex items-center gap-3 p-3 rounded-lg ${
+                        ['done', 'running', 'needs_review', 'failed'].includes(currentJob.status) ? 'bg-green-50 border border-green-200' : 'bg-muted'
+                      }`}
+                      aria-current={currentJob.status === 'queued' ? 'step' : undefined}
+                    >
                       <CheckCircle className="h-5 w-5 text-green-600" />
                       <span className="font-medium">File uploaded</span>
                     </div>
 
-                    <div className={`flex items-center gap-3 p-3 rounded-lg ${
-                      currentJob.status === 'running' ? 'bg-blue-50 border border-blue-200' :
-                      ['done', 'needs_review', 'failed'].includes(currentJob.status) ? 'bg-green-50 border border-green-200' : 'bg-muted'
-                    }`}>
+                    <div 
+                      className={`flex items-center gap-3 p-3 rounded-lg ${
+                        currentJob.status === 'running' ? 'bg-blue-50 border border-blue-200' :
+                        ['done', 'needs_review', 'failed'].includes(currentJob.status) ? 'bg-green-50 border border-green-200' : 'bg-muted'
+                      }`}
+                      aria-current={currentJob.status === 'running' ? 'step' : undefined}
+                    >
                       {currentJob.status === 'running' ? (
                         <Loader2 className="h-5 w-5 text-primary animate-spin" />
                       ) : ['done', 'needs_review', 'failed'].includes(currentJob.status) ? (
@@ -402,11 +414,14 @@ export default function Upload() {
                       <span className="font-medium">Extracting data</span>
                     </div>
 
-                    <div className={`flex items-center gap-3 p-3 rounded-lg ${
-                      currentJob.status === 'done' ? 'bg-green-50 border border-green-200' :
-                      currentJob.status === 'needs_review' ? 'bg-yellow-50 border border-yellow-200' :
-                      currentJob.status === 'failed' ? 'bg-red-50 border border-red-200' : 'bg-muted'
-                    }`}>
+                    <div 
+                      className={`flex items-center gap-3 p-3 rounded-lg ${
+                        currentJob.status === 'done' ? 'bg-green-50 border border-green-200' :
+                        currentJob.status === 'needs_review' ? 'bg-yellow-50 border border-yellow-200' :
+                        currentJob.status === 'failed' ? 'bg-red-50 border border-red-200' : 'bg-muted'
+                      }`}
+                      aria-current={['done', 'needs_review', 'failed'].includes(currentJob.status) ? 'step' : undefined}
+                    >
                       {currentJob.status === 'done' ? (
                         <CheckCircle className="h-5 w-5 text-green-600" />
                       ) : currentJob.status === 'needs_review' ? (

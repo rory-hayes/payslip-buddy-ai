@@ -13,12 +13,14 @@ import { Badge } from '@/components/ui/badge';
 import { AlertCircle, CheckCircle } from 'lucide-react';
 import { formatMoney } from '@/lib/format';
 
+// NOTE: Highlight coordinates are PERCENT (0..100) of the rendered image width/height
+// Backend should provide coordinates as percentages for responsive overlay rendering
 export interface Highlight {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  label: string;
+  x: number;       // X position as percentage (0-100)
+  y: number;       // Y position as percentage (0-100)
+  w: number;       // Width as percentage (0-100)
+  h: number;       // Height as percentage (0-100)
+  label: string;   // Field label (e.g., "Net Pay", "Gross Pay")
 }
 
 export interface ReviewDrawerProps {
@@ -115,6 +117,7 @@ export function ReviewDrawer({
             {highlights.map((highlight, idx) => (
               <div
                 key={idx}
+                role="img"
                 className="absolute border-2 border-primary bg-primary/10"
                 style={{
                   left: `${highlight.x}%`,

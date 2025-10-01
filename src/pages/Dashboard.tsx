@@ -14,6 +14,9 @@ import { Payslip, Anomaly } from '@/types/database';
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { formatMoney, formatDate } from '@/lib/format';
+import { inferPeriodType } from '@/lib/period';
+import { resolveConflictGroup } from '@/lib/conflicts';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function Dashboard() {
   const [selectedEmployer, setSelectedEmployer] = useState<string>('all');
@@ -22,6 +25,7 @@ export default function Dashboard() {
   const [selectedAnomaly, setSelectedAnomaly] = useState<Anomaly | null>(null);
   const [snoozePeriods, setSnoozePeriods] = useState(1);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const { data: payslips, isLoading: payslipsLoading, refetch: refetchPayslips } = useQuery({
     queryKey: ['payslips'],
@@ -38,11 +42,14 @@ export default function Dashboard() {
   });
 
   const { data: anomalies, refetch: refetchAnomalies } = useQuery({
-    queryKey: ['anomalies'],
+    queryKey: ['anomalies', user?.id],
     queryFn: async () => {
+      if (!user) return [];
+      
       const { data, error } = await supabase
         .from('anomalies')
         .select('*, payslips(*)')
+        .eq('user_id', user.id) // Explicit scope by user_id
         .eq('muted', false)
         .or(`snoozed_until.is.null,snoozed_until.lt.${new Date().toISOString()}`)
         .order('created_at', { ascending: false });
@@ -50,6 +57,7 @@ export default function Dashboard() {
       if (error) throw error;
       return data as Anomaly[];
     },
+    enabled: !!user,
   });
 
   // Get all payslips including conflicts for conflict resolution
@@ -69,7 +77,11 @@ export default function Dashboard() {
   const employers = Array.from(new Set(payslips?.map(p => p.employer_name).filter(Boolean)));
   const filteredPayslips = payslips?.filter(p => {
     const matchesEmployer = selectedEmployer === 'all' || p.employer_name === selectedEmployer;
-    const matchesPeriod = periodFilter === 'all' || p.period_type === periodFilter;
+    
+    // Use period_type or infer it from dates as fallback
+    const periodType = p.period_type || inferPeriodType(p.period_start, p.period_end);
+    const matchesPeriod = periodFilter === 'all' || periodType === periodFilter;
+    
     return matchesEmployer && matchesPeriod;
   });
 
@@ -159,18 +171,15 @@ export default function Dashboard() {
   };
 
   const handleResolveConflict = async (selectedPayslipId: string, group: Payslip[]) => {
-    // Set selected payslip to conflict=false, others to conflict=true
-    const updates = group.map(p => 
-      supabase
-        .from('payslips')
-        .update({ conflict: p.id === selectedPayslipId ? false : true })
-        .eq('id', p.id)
+    const success = await resolveConflictGroup(
+      supabase,
+      selectedPayslipId,
+      group,
+      // Optimistic callback - could update local state here if needed
+      () => {}
     );
 
-    const results = await Promise.all(updates);
-    const hasError = results.some(r => r.error);
-
-    if (hasError) {
+    if (!success) {
       toast({
         title: 'Error',
         description: 'Failed to resolve conflict',
@@ -181,6 +190,7 @@ export default function Dashboard() {
         title: 'Conflict resolved',
         description: 'Selected payslip will be used for totals',
       });
+      // Optimistically refetch to update UI
       refetchPayslips();
     }
   };
