@@ -23,6 +23,8 @@ paths:
                     type: string
                 required:
                   - ok
+        '503':
+          description: Upstream dependency failure
   /internal/jobs/trigger:
     post:
       summary: Trigger a job manually
@@ -82,6 +84,8 @@ paths:
                 $ref: '#/components/schemas/Job'
         '404':
           description: Job not found
+        '403':
+          description: Invalid internal token
   /dossier/preview:
     get:
       summary: Preview dossier aggregates for a year
@@ -101,6 +105,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DossierResponse'
+        '401':
+          description: Missing or invalid JWT
 components:
   securitySchemes:
     bearerAuth:

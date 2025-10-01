@@ -1,41 +1,37 @@
 # Data Protection Impact Assessment
 
 ## Overview
-Payslip Companion processes employee payslips on behalf of end users to extract key financial figures, detect anomalies, and provide aggregated reports.
+Payslip Companion ingests employee payslips to extract compensation insights. The backend stores source PDFs, parsed structured data, anomaly findings, and generated reports. Processing occurs within EU-friendly Supabase infrastructure plus OpenAI (for redacted vision extraction) and Redis/ClamAV containers managed by the team.
 
-## Data Flows
-1. Users upload PDF payslips to Supabase Storage (`payslips` bucket) via the frontend.
-2. The backend worker downloads the PDF using a signed URL and performs malware scanning, redaction, and extraction.
-3. Structured results are stored in Supabase tables (`payslips`, `anomalies`, `jobs`, `events`).
-4. Optional reports (HR pack, dossier, exports) are generated and stored back in Supabase Storage.
+## Data Categories
+- **Identifiers**: Supabase user UUIDs, employer names, internal job IDs.
+- **Payroll Details**: Gross/net pay, tax, pension, student loan, deductions, year-to-date figures.
+- **Documents**: Original PDF payslips, redacted PNG previews, dossier/HR PDF exports.
+- **Operational Logs**: Job metadata, events, anomaly descriptions, LLM usage metrics (tokens, cost).
 
-## Personal Data Processed
-- Employee identification data embedded in payslips (names, addresses, NI/PRSI numbers).
-- Financial data (gross, net, tax, pension, deductions, year-to-date figures).
+## Processing Activities
+1. PDFs uploaded by the authenticated user are scanned for malware and stored under `{user_id}/{file_id}.pdf`.
+2. Native parsers extract text; regex-based redaction removes NI/PPS/IBAN/DOB/address values. Only redacted images are sent to OpenAI GPT-4o-mini for key-value reinforcement.
+3. Parsed values are validated (identity rule, date coherence) and persisted to `payslips`. Review flags trigger UI workflows.
+4. Anomaly detection compares against historical payslips to flag drops, regressions, and code changes. Findings populate the `anomalies` table.
+5. Users may request dossiers, HR packs, or exports; generated PDFs/ZIPs are stored back into Supabase Storage with signed URL delivery.
+6. Daily retention cleanup removes artifacts older than configured thresholds (30/90 days) and logs deletions in `events`.
+7. Delete-all jobs purge user-owned data on request while keeping profile/settings unless `purge_all=true`.
 
-## Lawful Basis
-Processing is based on user consent and necessity for contract performance to provide payslip insights.
+## Lawful Basis & Rights
+- **Lawful Basis**: Processing is based on user consent/contract to analyse their payroll documents for budgeting insights.
+- **Access & Portability**: Users can export all stored data via the `export_all` job (JSON/CSV + PDFs).
+- **Rectification & Erasure**: Users edit/correct payslip fields in the app; `delete_all` removes their records and storage objects.
+- **Objection & Restriction**: Users may disable anomaly notifications or redact additional fields; manual review is available for sensitive cases.
 
-## Data Minimisation
-- Redaction removes direct identifiers before invoking any third-party LLM.
-- Only structured numeric aggregates persist in the database; original PDFs remain in storage under user control.
+## Data Sharing & Sub-processors
+- **Supabase**: Authentication, Postgres, and Storage (EU region configured).
+- **OpenAI**: Receives redacted PNGs for vision extraction. No raw PII is transmitted; spend capped and logged.
+- **Redis**: Self-hosted cache/queue within our infrastructure. No persistent storage of PII.
+- **ClamAV**: Self-hosted malware scanner.
 
-## Retention
-- Default retention of 30 or 90 days configurable per user via `settings.retention_days`.
-- Daily retention job purges expired storage objects and database rows.
-
-## Sub-processors
-- Supabase (authentication, database, storage).
-- OpenAI (vision model for extraction) — only receives redacted imagery.
-- Redis (AWS ElastiCache or equivalent) for job queue metadata.
-
-## Security Controls
-- Row Level Security across all user-scoped tables.
-- Storage bucket prefix policies to isolate user data.
-- Malware scanning (ClamAV) before processing.
-- Spend cap enforcement for LLM calls to limit exposure.
-
-## Incident Response
-- Events table captures job failures and cleanup actions.
-- Runbooks outline procedures for outages, spend cap breaches, and retention failures.
-- Users can trigger `delete_all` to immediately purge their data.
+## Security & Retention Controls
+- TLS enforced end-to-end; service role credentials restricted to backend containers.
+- Row-Level Security ensures users access only their data. Storage policy enforces owner prefix.
+- Retention windows default to 90 days (configurable per user). Export/download artifacts share the same retention policy.
+- Incidents (malware, spend cap) are captured in `events` for audit trails.
