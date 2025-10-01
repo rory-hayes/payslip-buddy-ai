@@ -3,12 +3,15 @@ import { Header } from '@/components/Header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
-import { Settings as SettingsType } from '@/types/database';
+import { Settings as SettingsType, Job } from '@/types/database';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Loader2, Trash2, Download } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 
 export default function Settings() {
   const [settings, setSettings] = useState<SettingsType | null>(null);
@@ -16,6 +19,30 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
+
+  // Poll for active jobs
+  const { data: activeJobs, refetch: refetchJobs } = useQuery({
+    queryKey: ['active-jobs'],
+    queryFn: async () => {
+      if (!user) return [];
+      
+      const { data, error } = await supabase
+        .from('jobs')
+        .select('*')
+        .eq('user_id', user.id)
+        .in('kind', ['delete_all', 'export_all'])
+        .in('status', ['queued', 'running'])
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      return data as Job[];
+    },
+    refetchInterval: 3000, // Poll every 3 seconds
+    enabled: !!user,
+  });
+
+  const deleteAllJob = activeJobs?.find(j => j.kind === 'delete_all');
+  const exportAllJob = activeJobs?.find(j => j.kind === 'export_all');
 
   useEffect(() => {
     loadSettings();
@@ -72,6 +99,71 @@ export default function Settings() {
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    if (!user) return;
+
+    const confirmed = confirm(
+      'Are you sure you want to delete all your data? This action cannot be undone.'
+    );
+    if (!confirmed) return;
+
+    try {
+      const { error } = await supabase
+        .from('jobs')
+        .insert({
+          user_id: user.id,
+          kind: 'delete_all',
+          status: 'queued',
+          meta: {},
+        });
+
+      if (error) throw error;
+
+      toast({
+        title: 'Deletion queued',
+        description: 'Your data deletion request has been queued',
+      });
+
+      refetchJobs();
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleExportAll = async () => {
+    if (!user) return;
+
+    try {
+      const { error } = await supabase
+        .from('jobs')
+        .insert({
+          user_id: user.id,
+          kind: 'export_all',
+          status: 'queued',
+          meta: {},
+        });
+
+      if (error) throw error;
+
+      toast({
+        title: 'Export queued',
+        description: 'Your data export request has been queued',
+      });
+
+      refetchJobs();
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
     }
   };
 
@@ -187,13 +279,66 @@ export default function Settings() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex gap-3">
-                <Button variant="outline" disabled>
-                  Export All Data (Coming Soon)
+                <Button
+                  variant="outline"
+                  onClick={handleExportAll}
+                  disabled={!!exportAllJob}
+                  className="flex-1"
+                >
+                  {exportAllJob ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Exporting...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="mr-2 h-4 w-4" />
+                      Export All Data
+                    </>
+                  )}
                 </Button>
-                <Button variant="destructive" disabled>
-                  Delete All Data (Coming Soon)
+                <Button
+                  variant="destructive"
+                  onClick={handleDeleteAll}
+                  disabled={!!deleteAllJob}
+                  className="flex-1"
+                >
+                  {deleteAllJob ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete All Data
+                    </>
+                  )}
                 </Button>
               </div>
+
+              {/* Job Status Indicators */}
+              {deleteAllJob && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-red-600" />
+                    <span className="text-sm font-medium text-red-900">
+                      Deletion in progress: {deleteAllJob.status}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {exportAllJob && (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                    <span className="text-sm font-medium text-blue-900">
+                      Export in progress: {exportAllJob.status}
+                    </span>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 

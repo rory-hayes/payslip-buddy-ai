@@ -58,6 +58,30 @@ export type Database = {
           },
         ]
       }
+      events: {
+        Row: {
+          created_at: string | null
+          id: string
+          payload: Json | null
+          type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          payload?: Json | null
+          type: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          payload?: Json | null
+          type?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       files: {
         Row: {
           created_at: string | null
@@ -91,6 +115,50 @@ export type Database = {
         }
         Relationships: []
       }
+      jobs: {
+        Row: {
+          created_at: string | null
+          error: string | null
+          file_id: string | null
+          id: string
+          kind: string
+          meta: Json | null
+          status: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          error?: string | null
+          file_id?: string | null
+          id?: string
+          kind: string
+          meta?: Json | null
+          status?: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          error?: string | null
+          file_id?: string | null
+          id?: string
+          kind?: string
+          meta?: Json | null
+          status?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "jobs_file_id_fkey"
+            columns: ["file_id"]
+            isOneToOne: false
+            referencedRelation: "files"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       kb: {
         Row: {
           category: string
@@ -123,6 +191,47 @@ export type Database = {
           title?: string
         }
         Relationships: []
+      }
+      llm_usage: {
+        Row: {
+          cost: number | null
+          created_at: string | null
+          file_id: string | null
+          id: string
+          model: string | null
+          tokens_input: number | null
+          tokens_output: number | null
+          user_id: string
+        }
+        Insert: {
+          cost?: number | null
+          created_at?: string | null
+          file_id?: string | null
+          id?: string
+          model?: string | null
+          tokens_input?: number | null
+          tokens_output?: number | null
+          user_id: string
+        }
+        Update: {
+          cost?: number | null
+          created_at?: string | null
+          file_id?: string | null
+          id?: string
+          model?: string | null
+          tokens_input?: number | null
+          tokens_output?: number | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "llm_usage_file_id_fkey"
+            columns: ["file_id"]
+            isOneToOne: false
+            referencedRelation: "files"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       payslips: {
         Row: {
@@ -242,6 +351,35 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: []
+      }
+      redactions: {
+        Row: {
+          boxes: Json
+          created_at: string | null
+          file_id: string
+          id: string
+        }
+        Insert: {
+          boxes: Json
+          created_at?: string | null
+          file_id: string
+          id?: string
+        }
+        Update: {
+          boxes?: Json
+          created_at?: string | null
+          file_id?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "redactions_file_id_fkey"
+            columns: ["file_id"]
+            isOneToOne: false
+            referencedRelation: "files"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       settings: {
         Row: {

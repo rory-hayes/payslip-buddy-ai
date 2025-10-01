@@ -7,17 +7,54 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { DollarSign, TrendingUp, Wallet, PiggyBank, Upload, FileText, AlertTriangle } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DollarSign, TrendingUp, Wallet, PiggyBank, Upload, FileText, AlertTriangle, Clock, Volume2, VolumeX } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Payslip, Anomaly } from '@/types/database';
 import { useState } from 'react';
+import { useToast } from '@/hooks/use-toast';
+import { formatMoney, formatDate } from '@/lib/format';
 
 export default function Dashboard() {
   const [selectedEmployer, setSelectedEmployer] = useState<string>('all');
   const [periodFilter, setPeriodFilter] = useState<string>('all');
+  const [snoozeDialogOpen, setSnoozeDialogOpen] = useState(false);
+  const [selectedAnomaly, setSelectedAnomaly] = useState<Anomaly | null>(null);
+  const [snoozePeriods, setSnoozePeriods] = useState(1);
+  const { toast } = useToast();
 
-  const { data: payslips, isLoading: payslipsLoading } = useQuery({
+  const { data: payslips, isLoading: payslipsLoading, refetch: refetchPayslips } = useQuery({
     queryKey: ['payslips'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('payslips')
+        .select('*')
+        .eq('conflict', false) // Only show non-conflict payslips in totals
+        .order('pay_date', { ascending: false });
+      
+      if (error) throw error;
+      return data as Payslip[];
+    },
+  });
+
+  const { data: anomalies, refetch: refetchAnomalies } = useQuery({
+    queryKey: ['anomalies'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('anomalies')
+        .select('*, payslips(*)')
+        .eq('muted', false)
+        .or(`snoozed_until.is.null,snoozed_until.lt.${new Date().toISOString()}`)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      return data as Anomaly[];
+    },
+  });
+
+  // Get all payslips including conflicts for conflict resolution
+  const { data: allPayslips } = useQuery({
+    queryKey: ['all-payslips'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('payslips')
@@ -29,21 +66,6 @@ export default function Dashboard() {
     },
   });
 
-  const { data: anomalies } = useQuery({
-    queryKey: ['anomalies'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('anomalies')
-        .select('*, payslips(*)')
-        .eq('muted', false)
-        .is('snoozed_until', null)
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      return data as Anomaly[];
-    },
-  });
-
   const employers = Array.from(new Set(payslips?.map(p => p.employer_name).filter(Boolean)));
   const filteredPayslips = payslips?.filter(p => {
     const matchesEmployer = selectedEmployer === 'all' || p.employer_name === selectedEmployer;
@@ -51,14 +73,116 @@ export default function Dashboard() {
     return matchesEmployer && matchesPeriod;
   });
 
+  // Detect conflicts: multiple payslips for same (employer, period_start, period_end)
+  const conflictGroups = allPayslips?.reduce((acc, payslip) => {
+    if (!payslip.employer_name || !payslip.period_start || !payslip.period_end) return acc;
+    
+    const key = `${payslip.employer_name}-${payslip.period_start}-${payslip.period_end}`;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(payslip);
+    return acc;
+  }, {} as Record<string, Payslip[]>);
+
+  const hasConflicts = Object.values(conflictGroups || {}).some(group => group.length > 1);
+
   const latestPayslip = filteredPayslips?.[0];
-  
-  const formatCurrency = (amount: number | null, currency: string = 'GBP') => {
-    if (amount === null) return 'N/A';
-    return new Intl.NumberFormat('en-GB', {
-      style: 'currency',
-      currency,
-    }).format(amount);
+
+  const handleSnooze = (anomaly: Anomaly) => {
+    setSelectedAnomaly(anomaly);
+    setSnoozePeriods(1);
+    setSnoozeDialogOpen(true);
+  };
+
+  const confirmSnooze = async () => {
+    if (!selectedAnomaly || !selectedAnomaly.payslips) return;
+
+    // Calculate snooze date based on payslip period type
+    const payslip = selectedAnomaly.payslips;
+    const baseDate = new Date(payslip.pay_date || new Date());
+    let snoozedUntil = new Date(baseDate);
+
+    switch (payslip.period_type) {
+      case 'weekly':
+        snoozedUntil.setDate(snoozedUntil.getDate() + (7 * snoozePeriods));
+        break;
+      case 'fortnightly':
+        snoozedUntil.setDate(snoozedUntil.getDate() + (14 * snoozePeriods));
+        break;
+      case 'monthly':
+      default:
+        snoozedUntil.setMonth(snoozedUntil.getMonth() + snoozePeriods);
+        break;
+    }
+
+    const { error } = await supabase
+      .from('anomalies')
+      .update({ snoozed_until: snoozedUntil.toISOString() })
+      .eq('id', selectedAnomaly.id);
+
+    if (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to snooze anomaly',
+        variant: 'destructive',
+      });
+    } else {
+      toast({
+        title: 'Snoozed',
+        description: `Anomaly will reappear after ${formatDate(snoozedUntil.toISOString())}`,
+      });
+      refetchAnomalies();
+    }
+
+    setSnoozeDialogOpen(false);
+    setSelectedAnomaly(null);
+  };
+
+  const handleMute = async (anomalyId: string) => {
+    const { error } = await supabase
+      .from('anomalies')
+      .update({ muted: true })
+      .eq('id', anomalyId);
+
+    if (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to mute anomaly',
+        variant: 'destructive',
+      });
+    } else {
+      toast({
+        title: 'Muted',
+        description: 'This anomaly will no longer appear',
+      });
+      refetchAnomalies();
+    }
+  };
+
+  const handleResolveConflict = async (selectedPayslipId: string, group: Payslip[]) => {
+    // Set selected payslip to conflict=false, others to conflict=true
+    const updates = group.map(p => 
+      supabase
+        .from('payslips')
+        .update({ conflict: p.id === selectedPayslipId ? false : true })
+        .eq('id', p.id)
+    );
+
+    const results = await Promise.all(updates);
+    const hasError = results.some(r => r.error);
+
+    if (hasError) {
+      toast({
+        title: 'Error',
+        description: 'Failed to resolve conflict',
+        variant: 'destructive',
+      });
+    } else {
+      toast({
+        title: 'Conflict resolved',
+        description: 'Selected payslip will be used for totals',
+      });
+      refetchPayslips();
+    }
   };
 
   if (payslipsLoading) {
@@ -149,27 +273,73 @@ export default function Dashboard() {
           </Select>
         </div>
 
+        {/* Conflict Banner */}
+        {hasConflicts && (
+          <Alert className="border-yellow-600 bg-yellow-50">
+            <AlertTriangle className="h-4 w-4 text-yellow-600" />
+            <AlertTitle>Duplicate Payslips Detected</AlertTitle>
+            <AlertDescription>
+              You have multiple payslips for the same period. Select which to use for totals below.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Conflict Resolution */}
+        {hasConflicts && Object.entries(conflictGroups || {}).map(([key, group]) => {
+          if (group.length <= 1) return null;
+          
+          return (
+            <div key={key} className="bg-card p-4 rounded-lg border border-yellow-200">
+              <h3 className="font-semibold mb-3">
+                {group[0].employer_name} - {formatDate(group[0].period_start!)} to {formatDate(group[0].period_end!)}
+              </h3>
+              <div className="space-y-2">
+                {group.map(payslip => (
+                  <div key={payslip.id} className="flex items-center gap-3 p-3 bg-muted rounded">
+                    <input
+                      type="radio"
+                      name={`conflict-${key}`}
+                      checked={!payslip.conflict}
+                      onChange={() => handleResolveConflict(payslip.id, group)}
+                      className="h-4 w-4"
+                    />
+                    <div className="flex-1">
+                      <p className="text-sm">Net: {formatMoney(payslip.net, payslip.currency)}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Uploaded {formatDate(payslip.created_at)}
+                      </p>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      Use for totals
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+
         {latestPayslip && (
           <>
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
               <SummaryCard
                 title="Gross Pay"
-                value={formatCurrency(latestPayslip.gross, latestPayslip.currency)}
+                value={formatMoney(latestPayslip.gross, latestPayslip.currency)}
                 icon={DollarSign}
               />
               <SummaryCard
                 title="Net Pay"
-                value={formatCurrency(latestPayslip.net, latestPayslip.currency)}
+                value={formatMoney(latestPayslip.net, latestPayslip.currency)}
                 icon={Wallet}
               />
               <SummaryCard
                 title="Total Tax"
-                value={formatCurrency(latestPayslip.tax_income, latestPayslip.currency)}
+                value={formatMoney(latestPayslip.tax_income, latestPayslip.currency)}
                 icon={TrendingUp}
               />
               <SummaryCard
                 title="Pension"
-                value={formatCurrency(latestPayslip.pension_employee, latestPayslip.currency)}
+                value={formatMoney(latestPayslip.pension_employee, latestPayslip.currency)}
                 icon={PiggyBank}
               />
             </div>
@@ -188,9 +358,33 @@ export default function Dashboard() {
                   variant={anomaly.severity === 'error' ? 'destructive' : 'default'}
                   className="shadow-card"
                 >
-                  <AlertTriangle className="h-4 w-4" />
-                  <AlertTitle className="capitalize">{anomaly.type}</AlertTitle>
-                  <AlertDescription>{anomaly.message}</AlertDescription>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertTitle className="capitalize">{anomaly.type}</AlertTitle>
+                      </div>
+                      <AlertDescription>{anomaly.message}</AlertDescription>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleSnooze(anomaly)}
+                        title="Snooze this alert"
+                      >
+                        <Clock className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleMute(anomaly.id)}
+                        title="Mute this alert permanently"
+                      >
+                        <VolumeX className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
                 </Alert>
               ))}
             </div>
@@ -211,11 +405,11 @@ export default function Dashboard() {
                     <div>
                       <p className="font-semibold">{payslip.employer_name || 'Unknown Employer'}</p>
                       <p className="text-sm text-muted-foreground">
-                        {payslip.pay_date ? new Date(payslip.pay_date).toLocaleDateString('en-GB') : 'No date'}
+                        {formatDate(payslip.pay_date)}
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="font-semibold">{formatCurrency(payslip.net, payslip.currency)}</p>
+                      <p className="font-semibold">{formatMoney(payslip.net, payslip.currency)}</p>
                       <p className="text-sm text-muted-foreground">Net Pay</p>
                     </div>
                   </div>
@@ -225,6 +419,41 @@ export default function Dashboard() {
           </div>
         </div>
       </main>
+
+      {/* Snooze Dialog */}
+      <Dialog open={snoozeDialogOpen} onOpenChange={setSnoozeDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Snooze Alert</DialogTitle>
+            <DialogDescription>
+              How many pay periods should we snooze this alert?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <Select
+              value={snoozePeriods.toString()}
+              onValueChange={(v) => setSnoozePeriods(parseInt(v))}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">1 period</SelectItem>
+                <SelectItem value="2">2 periods</SelectItem>
+                <SelectItem value="3">3 periods</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSnoozeDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmSnooze}>
+              Snooze
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

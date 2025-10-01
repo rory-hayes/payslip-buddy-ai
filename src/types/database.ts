@@ -68,3 +68,41 @@ export interface Profile {
   created_at: string;
   updated_at: string;
 }
+
+export interface Job {
+  id: string;
+  user_id: string;
+  file_id: string | null;
+  kind: 'extract' | 'detect_anomalies' | 'hr_pack' | 'dossier' | 'delete_all' | 'export_all';
+  status: 'queued' | 'running' | 'needs_review' | 'done' | 'failed';
+  error: string | null;
+  meta: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Redaction {
+  id: string;
+  file_id: string;
+  boxes: Array<[number, number, number, number, string]>; // [x, y, w, h, label]
+  created_at: string;
+}
+
+export interface LlmUsage {
+  id: string;
+  user_id: string;
+  file_id: string | null;
+  model: string | null;
+  tokens_input: number | null;
+  tokens_output: number | null;
+  cost: number | null;
+  created_at: string;
+}
+
+export interface Event {
+  id: string;
+  user_id: string;
+  type: string;
+  payload: Record<string, any>;
+  created_at: string;
+}
