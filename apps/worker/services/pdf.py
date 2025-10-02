@@ -17,6 +17,11 @@ try:
 except Exception:  # pragma: no cover - optional dependency
     pdfplumber = None
 
+try:
+    import pytesseract
+except Exception:  # pragma: no cover - optional dependency
+    pytesseract = None
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -60,6 +65,40 @@ def extract_text(data: bytes) -> PdfText:
         raw_text = "\n".join(texts)
         has_text = any(text.strip() for text in texts)
         return PdfText(raw_text=raw_text, has_text=has_text)
+
+
+def perform_ocr(
+    data: bytes,
+    *,
+    dpi: int = 300,
+    languages: Optional[Iterable[str]] = None,
+    page_limit: Optional[int] = None,
+    psm: int = 6,
+) -> PdfText:
+    """Run Tesseract OCR against rasterised PDF pages."""
+
+    if fitz is None or pytesseract is None:
+        LOGGER.warning("OCR dependencies unavailable; skipping Tesseract fallback")
+        return PdfText(raw_text="", has_text=False)
+
+    lang_spec = "+".join(languages or ("eng", "enm", "gle"))
+    doc = fitz.open(stream=data, filetype="pdf")
+    texts: List[str] = []
+    for index, page in enumerate(doc):
+        if page_limit is not None and index >= page_limit:
+            break
+        pix = page.get_pixmap(dpi=dpi)
+        image = Image.open(io.BytesIO(pix.tobytes("png")))
+        try:
+            ocr_text = pytesseract.image_to_string(
+                image, lang=lang_spec, config=f"--psm {psm}"
+            )
+        except Exception as exc:  # pragma: no cover - dependency failure path
+            LOGGER.warning("Tesseract OCR failed: %s", exc)
+            ocr_text = ""
+        texts.append(ocr_text)
+    raw_text = "\n".join(texts)
+    return PdfText(raw_text=raw_text, has_text=bool(raw_text.strip()))
 
 
 def rasterize_first_pages(data: bytes, *, dpi: int = 300, pages: int = 2) -> List[RasterizedPage]:
@@ -131,7 +170,7 @@ def guess_country(raw_text: str) -> Optional[str]:
 
 
 def parse_amount(token: str) -> Optional[float]:
-    token = token.replace(",", "").replace("£", "").replace("€", "")
+    token = token.replace(",", "").replace("£", "").replace("€", "").replace("·", "")
     try:
         return round(float(token), 2)
     except ValueError:
@@ -169,6 +208,7 @@ __all__ = [
     "RasterizedPage",
     "decrypt_pdf",
     "extract_text",
+    "perform_ocr",
     "rasterize_first_pages",
     "render_redacted_preview",
     "guess_currency",

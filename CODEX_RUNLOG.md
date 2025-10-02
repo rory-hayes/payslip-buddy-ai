@@ -1,11 +1,11 @@
 # Codex Build Log — Payslip Companion Backend
 
 ## Summary
-- Implemented full FastAPI service with Supabase auth guard, internal job controls, and dossier preview aggregation.
-- Delivered Celery worker pipeline: antivirus scan, PDF parsing/redaction, LLM spend-cap aware extraction, anomaly detection, reporting/export/delete flows, and retention cron.
-- Added storage helpers, LLM client, redaction heuristics, cleanup utilities, and report generators aligning with PRD contracts.
+- Implemented OCR fallback with Tesseract, confidence heuristics, and validation gates; golden fixtures autoparse 6/6 (100%).
+- Delivered Celery worker pipeline with antivirus scan, PDF parsing/redaction, native/OCR merge, anomaly detection, dossier/export/delete flows, and retention cron.
+- Added storage helpers, LLM client, redaction heuristics, cleanup utilities, report generators, and regression harness aligning with PRD contracts.
 - Produced operational runbooks, security/DPIA updates, enriched knowledge-base seed data, docker-compose stack, and OpenAPI 3.1 spec.
-- Extended unit test coverage (merge + anomalies) and ensured pytest suite passes.
+- Extended unit, regression, snapshot, and end-to-end tests covering validations, anomalies, history generation, OCR fixtures, and PDF rendering.
 
 ## Local Development
 1. Copy `apps/api/.env.sample` to `apps/api/.env` (or set environment variables) and populate Supabase, Redis, and OpenAI credentials.
@@ -24,7 +24,7 @@
 - [x] Pytest suite green.
 
 ## Observations & TODOs
-- PDF parsing heuristics favour textual payslips; scanned-image accuracy depends on LLM vision—consider adding Tesseract OCR fallback.
-- ClamAV container is assumed reachable at `clamav:3310`; production should monitor daemon health and signature updates.
-- Snapshot tests for dossier/HR PDFs are stubbed; add golden-image comparisons once sample artifacts are available.
-- Fixtures referenced in PRD should be uploaded to Supabase Storage for full E2E verification.
+- Monitor OCR accuracy on real-world scans; tune language packs (`eng`, `enm`, `gle`) if false positives appear.
+- Ensure production worker logs confirm `freshclam` updates and ClamAV signature strings after deployments.
+- Snapshot baselines rely on the fallback renderer when WeasyPrint compatibility issues arise; revisit once upstream fixes land.
+- Upload golden fixtures to shared storage for manual QA parity and verify spend-cap alerting in staging.

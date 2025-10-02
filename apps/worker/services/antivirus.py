@@ -9,6 +9,7 @@ except Exception:  # pragma: no cover - optional dependency may be missing
     pyclamd = None
 
 LOGGER = logging.getLogger(__name__)
+_VERSION_LOGGED = False
 
 
 class AntivirusError(RuntimeError):
@@ -20,6 +21,7 @@ def scan_bytes(data: bytes, *, host: str = "clamav", port: int = 3310, timeout: 
     if pyclamd is None:
         LOGGER.warning("pyclamd unavailable; skipping antivirus scan.")
         return
+    global _VERSION_LOGGED
     try:
         client = pyclamd.ClamdNetworkSocket(host=host, port=port, timeout=timeout)
         ping = client.ping()
@@ -29,6 +31,13 @@ def scan_bytes(data: bytes, *, host: str = "clamav", port: int = 3310, timeout: 
     if ping != "PONG":  # pragma: no cover - defensive guard
         LOGGER.warning("Unexpected ClamAV ping response: %s", ping)
         return
+    if not _VERSION_LOGGED:
+        try:
+            version_info = client.version()
+            LOGGER.info("ClamAV signature version: %s", version_info)
+        except Exception as exc:  # pragma: no cover - non-fatal logging path
+            LOGGER.debug("Unable to read ClamAV version: %s", exc)
+        _VERSION_LOGGED = True
     result = client.scan_stream(data)
     if result:
         raise AntivirusError(str(result))

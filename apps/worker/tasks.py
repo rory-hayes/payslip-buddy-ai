@@ -31,8 +31,8 @@ from apps.worker.services.pdf import (
     extract_text,
     guess_country,
     guess_currency,
+    perform_ocr,
     rasterize_first_pages,
-    render_redacted_preview,
 )
 from apps.worker.services.redaction import redact_text
 from apps.worker.services.reports import (
@@ -42,6 +42,13 @@ from apps.worker.services.reports import (
     generate_hr_pack_pdf,
 )
 from apps.worker.services.storage import StorageService, get_storage_service
+from apps.worker.services.validation import (
+    calculate_confidence,
+    count_native_fields,
+    validate_date_window,
+    validate_tax_code_format,
+    validate_ytd_monotonic,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -102,6 +109,29 @@ def _native_parse(text: PdfText) -> NativeExtraction:
     return native
 
 
+def _merge_pdf_text(primary: PdfText, secondary: PdfText) -> PdfText:
+    parts = [primary.raw_text.strip(), secondary.raw_text.strip()]
+    merged = "\n".join(part for part in parts if part)
+    return PdfText(raw_text=merged, has_text=bool(merged.strip()))
+
+
+def _augment_native(primary: NativeExtraction, fallback: NativeExtraction) -> NativeExtraction:
+    for field in primary.__dataclass_fields__:
+        current = getattr(primary, field)
+        replacement = getattr(fallback, field)
+        if current in (None, "") and replacement not in (None, ""):
+            setattr(primary, field, replacement)
+    if not primary.ytd and fallback.ytd:
+        primary.ytd = fallback.ytd
+    return primary
+
+
+def _needs_ocr(native: NativeExtraction, text: PdfText) -> bool:
+    if not text.has_text:
+        return True
+    return count_native_fields(native) < 4
+
+
 def _llm_extract(user_id: str, file_id: Optional[str], redacted_images: List[bytes]) -> Optional[LlmResponse]:
     settings = get_settings()
     if not settings.openai_api_key:
@@ -144,6 +174,15 @@ def job_extract(job_id: str) -> None:
         decrypted_pdf = decrypt_pdf(storage_object.bytes, pdf_password)
         text = extract_text(decrypted_pdf)
         native = _native_parse(text)
+        ocr_text = PdfText(raw_text="", has_text=False)
+        used_ocr = False
+        if _needs_ocr(native, text):
+            LOGGER.info("Falling back to OCR for job %s", job_id)
+            ocr_text = perform_ocr(decrypted_pdf, page_limit=2)
+            if ocr_text.has_text:
+                native = _augment_native(native, _native_parse(ocr_text))
+                text = _merge_pdf_text(text, ocr_text)
+                used_ocr = True
         redaction = redact_text(text.raw_text)
         rasterized = rasterize_first_pages(decrypted_pdf, pages=2)
         preview_image = redaction.preview_png or rasterized[0].png_bytes
@@ -191,9 +230,36 @@ def job_extract(job_id: str) -> None:
     merged["period_start"] = normalize_date(merged.get("period_start"))
     merged["period_end"] = normalize_date(merged.get("period_end"))
 
+    previous_rows = (
+        supabase.client.table("payslips")
+        .select("*")
+        .eq("user_id", job["user_id"])
+        .order("pay_date", desc=True)
+        .limit(1)
+        .execute()
+    )
+    previous_ytd = ((previous_rows.data or [{}])[0]).get("ytd") if previous_rows.data else None
+
     identity_ok = validate_identity_rule(merged)
-    confidence = float(merged.get("confidence_overall") or 0.0)
-    review_required = not identity_ok or confidence < 0.9
+    ytd_ok = validate_ytd_monotonic(merged.get("ytd") or {}, previous_ytd)
+    dates_ok = validate_date_window(merged.get("pay_date"), merged.get("period_start"), merged.get("period_end"))
+    tax_ok = validate_tax_code_format(merged.get("tax_code"), merged.get("country"))
+    validations = {
+        "identity": identity_ok,
+        "ytd": ytd_ok,
+        "dates": dates_ok,
+        "tax": tax_ok,
+    }
+    confidence = calculate_confidence(
+        native,
+        merged,
+        identity_ok=identity_ok,
+        validations=validations,
+        used_ocr=used_ocr,
+        llm_present=bool(llm_response),
+    )
+    merged["confidence_overall"] = confidence
+    review_required = not all(validations.values()) or confidence < 0.9
 
     payslip_record = {
         "user_id": job["user_id"],
@@ -230,6 +296,8 @@ def job_extract(job_id: str) -> None:
             "reviewRequired": review_required,
             "imageUrl": f"{job['user_id']}/{file_row['id']}_redacted.png",
             "highlights": redaction.boxes,
+            "validations": validations,
+            "ocrFallback": used_ocr,
         }
     )
     if llm_response:

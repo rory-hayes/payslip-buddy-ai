@@ -13,3 +13,4 @@ pillow==10.3.0
 python-jose==3.3.0
 requests==2.31.0
 pyclamd==0.4.0
+pytesseract==0.3.13
