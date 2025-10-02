@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { getSupabaseClient } from '@/integrations/supabase/client';
 import { Header } from '@/components/Header';
 import { SummaryCard } from '@/components/SummaryCard';
 import { ExplainerCard } from '@/components/ExplainerCard';
@@ -19,6 +19,7 @@ import { resolveConflictGroup } from '@/lib/conflicts';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function Dashboard() {
+  const supabase = getSupabaseClient();
   const [selectedEmployer, setSelectedEmployer] = useState<string>('all');
   const [periodFilter, setPeriodFilter] = useState<string>('all');
   const [snoozeDialogOpen, setSnoozeDialogOpen] = useState(false);
@@ -124,7 +125,16 @@ export default function Dashboard() {
   };
 
   const confirmSnooze = async () => {
-    const anomalyPayslipData = selectedAnomaly?.payslips as Payslip | Payslip[] | undefined;
+    if (!selectedAnomaly) {
+      toast({
+        title: 'Unable to snooze',
+        description: 'No anomaly selected for snoozing.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const anomalyPayslipData = selectedAnomaly.payslips as Payslip | Payslip[] | undefined;
     const relatedPayslip = Array.isArray(anomalyPayslipData)
       ? anomalyPayslipData[0]
       : anomalyPayslipData;

@@ -7,7 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Upload as UploadIcon, FileText, CheckCircle2, AlertCircle, Loader2, Clock, CheckCircle, XCircle } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { getSupabaseClient } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { PasswordPromptModal } from '@/components/PasswordPromptModal';
@@ -16,6 +16,7 @@ import { Job } from '@/types/database';
 import { JobKind, JobStatus } from '@/types/jobs';
 
 export default function Upload() {
+  const supabase = getSupabaseClient();
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);

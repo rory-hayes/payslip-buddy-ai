@@ -1,6 +1,6 @@
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { getSupabaseClient } from '@/integrations/supabase/client';
 import { Header } from '@/components/Header';
 import { ExplainerCard } from '@/components/ExplainerCard';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import { ArrowLeft } from 'lucide-react';
 import { Payslip } from '@/types/database';
 
 export default function PayslipDetail() {
+  const supabase = getSupabaseClient();
   const { id } = useParams();
 
   const { data: payslip, isLoading } = useQuery({
