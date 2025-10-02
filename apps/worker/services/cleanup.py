@@ -13,10 +13,15 @@ LOGGER = logging.getLogger(__name__)
 def delete_user_data(user_id: str, *, purge_all: bool = False) -> None:
     supabase = get_supabase()
     storage = get_storage_service()
-    files_response = supabase.client.table("files").select("id, storage_path").eq("user_id", user_id).execute()
+    files_response = (
+        supabase.client.table("files")
+        .select("id, s3_key_original, s3_key_redacted")
+        .eq("user_id", user_id)
+        .execute()
+    )
     for row in files_response.data or []:
-        path = row.get("storage_path") or f"{user_id}/{row['id']}.pdf"
-        preview_path = f"{user_id}/{row['id']}_redacted.png"
+        path = row.get("s3_key_original") or f"{user_id}/{row['id']}.pdf"
+        preview_path = row.get("s3_key_redacted") or f"{user_id}/{row['id']}_redacted.png"
         storage.delete_objects([path, preview_path])
     tables = ["payslips", "files", "anomalies", "redactions", "llm_usage", "events", "jobs"]
     for table in tables:
@@ -37,11 +42,15 @@ def retention_cleanup(default_days: int = 90) -> Dict[str, int]:
         retention_days = row.get("retention_days") or default_days
         cutoff = (now - timedelta(days=retention_days)).isoformat()
         old_files = (
-            supabase.client.table("files").select("id, storage_path, created_at").eq("user_id", user_id).lt("created_at", cutoff).execute()
+            supabase.client.table("files")
+            .select("id, s3_key_original, s3_key_redacted, created_at")
+            .eq("user_id", user_id)
+            .lt("created_at", cutoff)
+            .execute()
         )
         for file_row in old_files.data or []:
-            path = file_row.get("storage_path") or f"{user_id}/{file_row['id']}.pdf"
-            preview_path = f"{user_id}/{file_row['id']}_redacted.png"
+            path = file_row.get("s3_key_original") or f"{user_id}/{file_row['id']}.pdf"
+            preview_path = file_row.get("s3_key_redacted") or f"{user_id}/{file_row['id']}_redacted.png"
             storage.delete_objects([path, preview_path])
         supabase.client.table("files").delete().eq("user_id", user_id).lt("created_at", cutoff).execute()
         response = supabase.client.table("payslips").delete().eq("user_id", user_id).lt("created_at", cutoff).execute()

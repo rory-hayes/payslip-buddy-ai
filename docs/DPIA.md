@@ -12,7 +12,7 @@ Payslip Companion ingests employee payslips to extract compensation insights. Th
 ## Processing Activities
 1. PDFs uploaded by the authenticated user are scanned for malware and stored under `{user_id}/{file_id}.pdf`.
 2. Native parsers extract text; when PDFs are scanned or low fidelity the worker rasterises pages and runs Tesseract OCR locally. OCR output never leaves the worker and feeds the same validation pipeline as native text.
-3. Regex-based redaction removes NI/PPS/IBAN/DOB/address values before preview generation. Only redacted images are sent to OpenAI GPT-4o-mini for key-value reinforcement.
+3. Regex-based redaction removes NI/PPS/IBAN/DOB/address values before preview generation. Only redacted preview PNGs (with highlight coordinates normalised to percentages) are sent to OpenAI GPT-4o-mini for key-value reinforcement.
 4. Parsed values are validated (identity rule, YTD monotonicity, date/tax-code checks) and persisted to `payslips`. Review flags trigger UI workflows.
 4. Anomaly detection compares against historical payslips to flag drops, regressions, and code changes. Findings populate the `anomalies` table.
 5. Users may request dossiers, HR packs, or exports; generated PDFs/ZIPs are stored back into Supabase Storage with signed URL delivery.

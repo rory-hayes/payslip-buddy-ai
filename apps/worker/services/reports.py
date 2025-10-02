@@ -10,6 +10,8 @@ from typing import Any, Dict, List
 
 from weasyprint import HTML
 
+from pathlib import Path
+
 from apps.common.supabase import get_supabase
 
 try:
@@ -89,9 +91,10 @@ def build_export_zip(user_id: str, *, payslips: List[Dict[str, Any]], files: Lis
         archive.writestr("anomalies.json", json.dumps(anomalies, indent=2, default=str))
         archive.writestr("settings.json", json.dumps(settings, indent=2, default=str))
         for file_row in files:
-            if not file_row.get("storage_path"):
+            key = file_row.get("s3_key_original") or file_row.get("storage_path")
+            if not key:
                 continue
-            archive.writestr(f"pdfs/{file_row['storage_path'].split('/')[-1]}", "")
+            archive.writestr(f"pdfs/{Path(key).name}", "")
     return ReportArtifact(filename=f"{user_id}_export.zip", bytes=buf.getvalue(), content_type="application/zip")
 
 
