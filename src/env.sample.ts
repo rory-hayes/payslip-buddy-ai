@@ -7,15 +7,15 @@
  * 
  * Example .env file:
  * 
- * VITE_SUPABASE_URL=https://your-project.supabase.co
- * VITE_SUPABASE_PUBLISHABLE_KEY=your-anon-key-here
+ * VITE_SUPABASE_URL=https://YOUR-PROJECT.supabase.co
+ * VITE_SUPABASE_ANON_KEY=YOUR-ANON-KEY
  * VITE_SUPABASE_PROJECT_ID=your-project-id
  */
 
 // TypeScript interface for type safety (optional)
 interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL: string;
-  readonly VITE_SUPABASE_PUBLISHABLE_KEY: string;
+  readonly VITE_SUPABASE_ANON_KEY: string;
   readonly VITE_SUPABASE_PROJECT_ID: string;
 }
 

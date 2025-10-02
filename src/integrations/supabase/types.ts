@@ -358,18 +358,21 @@ export type Database = {
           created_at: string | null
           file_id: string
           id: string
+          user_id: string
         }
         Insert: {
           boxes: Json
           created_at?: string | null
           file_id: string
           id?: string
+          user_id: string
         }
         Update: {
           boxes?: Json
           created_at?: string | null
           file_id?: string
           id?: string
+          user_id?: string
         }
         Relationships: [
           {

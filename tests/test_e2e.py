@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import io
+import json
 import sys
 import types
+import zipfile
+from pathlib import Path
 
 import pytest
 
@@ -90,6 +94,7 @@ def test_end_to_end_pipeline(monkeypatch, fake_supabase, fake_storage, fixture_s
     monkeypatch.setattr("apps.worker.tasks.perform_ocr", fake_ocr)
 
     autoparse = 0
+    identity_pass = 0
     status_map: dict[str, str] = {}
     for fixture in fixtures:
         file_id = fixture
@@ -119,6 +124,8 @@ def test_end_to_end_pipeline(monkeypatch, fake_supabase, fake_storage, fixture_s
         status_map[fixture] = job_row["status"]
         if job_row["status"] == JobStatus.DONE.value:
             autoparse += 1
+        if (job_row.get("meta") or {}).get("validations", {}).get("identity"):
+            identity_pass += 1
         assert "fields" in job_row["meta"]
         assert "validations" in job_row["meta"]
 
@@ -157,6 +164,15 @@ def test_end_to_end_pipeline(monkeypatch, fake_supabase, fake_storage, fixture_s
     job_export_all(export_job["id"])
     export_row = fake_supabase.table_select_single("jobs", match={"id": export_job["id"]})
     assert export_row["meta"].get("download_url")
+    export_bytes = next(data for path, data in fake_storage.uploads.items() if path.endswith("export.zip"))
+    with zipfile.ZipFile(io.BytesIO(export_bytes)) as archive:
+        members = archive.namelist()
+        for csv_name in ["payslips.csv", "files.csv", "anomalies.csv", "settings.csv"]:
+            assert csv_name in members
+        expected_pdfs = {f"pdfs/{fixture}.pdf" for fixture in fixtures}
+        assert expected_pdfs.issubset(set(members))
+        for pdf_name in expected_pdfs:
+            assert archive.read(pdf_name)
 
     hr_job = fake_supabase.insert_row(
         "jobs",
@@ -175,3 +191,18 @@ def test_end_to_end_pipeline(monkeypatch, fake_supabase, fake_storage, fixture_s
     assert any(path.endswith("_redacted.png") for path in fake_storage.uploads)
     assert any(path.endswith("dossier.pdf") for path in fake_storage.uploads)
     assert any(path.endswith("export.zip") for path in fake_storage.uploads)
+
+    identity_rate = identity_pass / len(fixtures)
+    anomaly_counts: dict[str, int] = {}
+    for anomaly in fake_supabase.tables["anomalies"]:
+        key = anomaly.get("type") or "unknown"
+        anomaly_counts[key] = anomaly_counts.get(key, 0) + 1
+    reports_dir = Path("reports")
+    reports_dir.mkdir(exist_ok=True)
+    metrics = {
+        "autoparse_rate": autoparse_rate,
+        "identity_pass_rate": identity_rate,
+        "anomaly_counts": anomaly_counts,
+    }
+    (reports_dir / "pipeline_metrics.json").write_text(json.dumps(metrics, indent=2, sort_keys=True))
+    assert identity_rate >= 0.98, f"identity_rate={identity_rate:.2f}"

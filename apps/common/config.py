@@ -27,5 +27,6 @@ def get_settings() -> Settings:
         redis_url=os.environ.get("REDIS_URL", "redis://redis:6379/0"),
         llm_spend_daily_cap_usd=float(os.environ.get("LLM_SPEND_DAILY_CAP_USD", "10")),
         log_level=os.environ.get("LOG_LEVEL", "INFO"),
-        internal_auth_token=os.environ.get("INTERNAL_AUTH_TOKEN"),
+        internal_auth_token=os.environ.get("INTERNAL_TOKEN")
+        or os.environ.get("INTERNAL_AUTH_TOKEN"),
     )

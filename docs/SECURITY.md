@@ -9,6 +9,7 @@
 - User-facing requests carry Supabase JWTs. The API validates bearer tokens, checks the `sub` against Supabase URL/audience, and derives `user_id` for queries.
 - Internal automation uses the service-role key exclusively on the backend. Keys are injected via environment variables and never exposed client-side.
 - Storage access always goes through signed URLs generated server-side; the worker uploads redacted previews using the service role.
+- Knowledge base articles (`kb`) are readable only by authenticated application users. No anonymous policy is enabled in production; Supabase RLS enforces `auth.uid()` checks as documented in the PRD.
 
 ## PII Minimisation & LLM Safety
 - Native parsing (pdfplumber/PyMuPDF) and OCR (Tesseract) run entirely inside the worker. OCR text stays in memory long enough to improve native field extraction and is never persisted or transmitted externally.

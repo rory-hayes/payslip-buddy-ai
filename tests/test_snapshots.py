@@ -46,7 +46,15 @@ def test_dossier_snapshot(tmp_path):
 
 
 def test_hr_pack_snapshot(tmp_path):
-    payload = {"summary": "HR pack", "notes": ["Line 1", "Line 2"]}
+    payload = {
+        "summary": "HR pack",
+        "notes": ["Line 1", "Line 2"],
+        "redacted_preview": {
+            "url": "https://storage.local/user-1/example_redacted.png",
+            "label": "example",
+            "image_data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+8cBcAAAAASUVORK5CYII=",
+        },
+    }
     artifact = generate_hr_pack_pdf("user-1", payload)
     image = _pdf_first_page(artifact.bytes)
     _assert_snapshot(image, "hr_pack")

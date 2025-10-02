@@ -549,9 +549,9 @@ INSERT INTO public.kb (region, category, title, note, link, sort_order) VALUES
 
 Create `.env` file with:
 ```
-VITE_SUPABASE_URL=https://lmmjnsqxvadbygfsavke.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=<anon-key>
-VITE_SUPABASE_PROJECT_ID=lmmjnsqxvadbygfsavke
+VITE_SUPABASE_URL=https://YOUR-PROJECT.supabase.co
+VITE_SUPABASE_ANON_KEY=<anon-key>
+VITE_SUPABASE_PROJECT_ID=YOUR-PROJECT-ID
 ```
 
 **Note:** Lovable builds use inline configuration in `src/integrations/supabase/client.ts`

@@ -448,7 +448,38 @@ def job_hr_pack(job_id: str) -> None:
     if not job:
         return
     _update_job(job_id, {"status": JobStatus.RUNNING.value})
-    payload = (job.get("meta") or {}).get("payload") or {}
+    raw_payload = (job.get("meta") or {}).get("payload") or {}
+    payload = json.loads(json.dumps(raw_payload)) if isinstance(raw_payload, dict) else {}
+    preview_context = {}
+    if isinstance(raw_payload, dict):
+        preview_context = dict(raw_payload.get("redacted_preview") or {})
+    if not preview_context.get("url") or not preview_context.get("image_data"):
+        preview_row = (
+            supabase.client.table("files")
+            .select("id, s3_key_redacted")
+            .eq("user_id", job["user_id"])
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        row = (preview_row.data or [None])[0] if preview_row else None
+        preview_path = (row or {}).get("s3_key_redacted")
+        if preview_path:
+            try:
+                signed_url = storage.create_signed_url(preview_path)
+                preview_object = storage.fetch_signed_object(preview_path)
+                preview_context = {
+                    "url": signed_url,
+                    "label": (row or {}).get("id"),
+                    "image_data": base64.b64encode(preview_object.bytes).decode("ascii"),
+                }
+            except FileNotFoundError:
+                LOGGER.warning(
+                    "Redacted preview missing for HR pack", extra={"user_id": job["user_id"], "path": preview_path}
+                )
+    if preview_context:
+        preview_context.setdefault("label", preview_context.get("file_id") or "Redacted Preview")
+        payload["redacted_preview"] = preview_context
     artifact = generate_hr_pack_pdf(job["user_id"], payload)
     stored = storage.upload_bytes(user_id=job["user_id"], name=artifact.filename, content_type=artifact.content_type, data=artifact.bytes)
     job_meta = job.get("meta") or {}
@@ -474,7 +505,14 @@ def job_export_all(job_id: str) -> None:
     settings = (
         supabase.client.table("settings").select("*").eq("user_id", job["user_id"]).execute().data or []
     )
-    artifact = build_export_zip(job["user_id"], payslips=payslips, files=files, anomalies=anomalies, settings=settings[0] if settings else {})
+    artifact = build_export_zip(
+        job["user_id"],
+        payslips=payslips,
+        files=files,
+        anomalies=anomalies,
+        settings=settings[0] if settings else {},
+        storage=storage,
+    )
     stored = storage.upload_bytes(user_id=job["user_id"], name=artifact.filename, content_type=artifact.content_type, data=artifact.bytes)
     job_meta = job.get("meta") or {}
     job_meta["download_url"] = stored.path

@@ -1,18 +1,21 @@
 from __future__ import annotations
 
+import base64
+import csv
 import io
 import json
 import logging
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from weasyprint import HTML
 
 from pathlib import Path
 
 from apps.common.supabase import get_supabase
+from apps.worker.services.storage import StorageService, get_storage_service
 
 try:
     import fitz
@@ -43,18 +46,48 @@ def generate_dossier_pdf(user_id: str, dossier: Dict[str, Any]) -> ReportArtifac
 
 
 def generate_hr_pack_pdf(user_id: str, payload: Dict[str, Any]) -> ReportArtifact:
-    html = _render_html("HR Summary Pack", payload)
+    preview = payload.get("redacted_preview") if isinstance(payload, dict) else None
+    rendered_payload = json.loads(json.dumps(payload)) if isinstance(payload, dict) else payload
+    if isinstance(rendered_payload, dict) and preview:
+        preview_copy = dict(preview)
+        preview_copy.pop("image_data", None)
+        rendered_payload["redacted_preview"] = preview_copy
+    html = _render_html("HR Summary Pack", rendered_payload, preview=preview)
     pdf_bytes = _write_pdf("HR Summary Pack", html, payload)
     return ReportArtifact(filename=f"{user_id}_hr_pack.pdf", bytes=pdf_bytes, content_type="application/pdf")
 
 
-def _render_html(title: str, payload: Dict[str, Any]) -> str:
+def _render_html(
+    title: str,
+    payload: Dict[str, Any],
+    *,
+    preview: Optional[Dict[str, Any]] = None,
+) -> str:
     body = json.dumps(payload, indent=2)
+    preview_section = ""
+    if preview and preview.get("url"):
+        link = preview["url"]
+        label = preview.get("label") or "Redacted Preview"
+        image_html = ""
+        image_data = preview.get("image_data")
+        if image_data:
+            image_html = (
+                f"<img src='data:image/png;base64,{image_data}' alt='Redacted preview for {label}' "
+                "style='max-width:480px;border:1px solid #ccc;padding:8px;border-radius:4px;' />"
+            )
+        preview_section = f"""
+        <section>
+            <h2>Redacted Preview</h2>
+            <p><a href="{link}">Download redacted preview</a> for <strong>{label}</strong>.</p>
+            {image_html}
+        </section>
+        """
     template = f"""
     <html>
     <head><meta charset='utf-8'><title>{title}</title></head>
     <body>
         <h1>{title}</h1>
+        {preview_section}
         <pre>{body}</pre>
     </body>
     </html>
@@ -84,17 +117,47 @@ def _write_pdf(title: str, html: str, payload: Dict[str, Any]) -> bytes:
     return html.encode("utf-8")
 
 
-def build_export_zip(user_id: str, *, payslips: List[Dict[str, Any]], files: List[Dict[str, Any]], anomalies: List[Dict[str, Any]], settings: Dict[str, Any]) -> ReportArtifact:
+def _dicts_to_csv(rows: List[Dict[str, Any]]) -> str:
+    if not rows:
+        return ""
+    fieldnames = sorted({key for row in rows for key in row.keys()})
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames)
+    writer.writeheader()
+    for row in rows:
+        writer.writerow({field: row.get(field) for field in fieldnames})
+    return buffer.getvalue()
+
+
+def build_export_zip(
+    user_id: str,
+    *,
+    payslips: List[Dict[str, Any]],
+    files: List[Dict[str, Any]],
+    anomalies: List[Dict[str, Any]],
+    settings: Dict[str, Any],
+    storage: Optional[StorageService] = None,
+) -> ReportArtifact:
+    storage_service = storage or get_storage_service()
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("payslips.json", json.dumps(payslips, indent=2, default=str))
         archive.writestr("anomalies.json", json.dumps(anomalies, indent=2, default=str))
         archive.writestr("settings.json", json.dumps(settings, indent=2, default=str))
+        archive.writestr("payslips.csv", _dicts_to_csv(payslips))
+        archive.writestr("files.csv", _dicts_to_csv(files))
+        archive.writestr("anomalies.csv", _dicts_to_csv(anomalies))
+        archive.writestr("settings.csv", _dicts_to_csv([settings] if settings else []))
         for file_row in files:
-            key = file_row.get("s3_key_original") or file_row.get("storage_path")
-            if not key:
+            file_id = file_row.get("id")
+            if not file_id:
                 continue
-            archive.writestr(f"pdfs/{Path(key).name}", "")
+            try:
+                pdf_object = storage_service.download_pdf(user_id=user_id, file_id=str(file_id))
+            except FileNotFoundError:
+                LOGGER.warning("Original PDF missing for export", extra={"user_id": user_id, "file_id": file_id})
+                continue
+            archive.writestr(f"pdfs/{file_id}.pdf", pdf_object.bytes)
     return ReportArtifact(filename=f"{user_id}_export.zip", bytes=buf.getvalue(), content_type="application/zip")
 
 

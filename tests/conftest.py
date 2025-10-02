@@ -125,6 +125,17 @@ class FakeStorageService:
         storage_path = f"{user_id}/{file_id}.pdf"
         return StorageObject(path=storage_path, bytes=data, content_type="application/pdf")
 
+    def create_signed_url(self, path, expires_in=300):  # noqa: ANN001 - test helper signature
+        return f"https://storage.local/{path}?expires={expires_in}"
+
+    def fetch_signed_object(self, path, *, expires_in=300):  # noqa: ANN001 - test helper signature
+        data = self.uploads.get(path)
+        if data is None:
+            fixture_path = self._fixtures / Path(path).name
+            data = fixture_path.read_bytes() if fixture_path.exists() else b""
+        content_type = "image/png" if path.endswith(".png") else "application/octet-stream"
+        return StorageObject(path=path, bytes=data, content_type=content_type)
+
     def upload_bytes(self, *, user_id, name, content_type, data):
         path = f"{user_id}/{name}"
         self.uploads[path] = data

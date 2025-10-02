@@ -2,13 +2,18 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-const SUPABASE_URL = "https://lmmjnsqxvadbygfsavke.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxtbWpuc3F4dmFkYnlnZnNhdmtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkyMjIzMDAsImV4cCI6MjA3NDc5ODMwMH0.VupIJQxhgic8HpwtdzbRp48F7-Y5MBGQXcLYiT7a8dE";
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// Import the supabase client like this:
-// import { supabase } from "@/integrations/supabase/client";
+if (!supabaseUrl) {
+  throw new Error('VITE_SUPABASE_URL is not set. Please configure your Supabase URL in the web environment.');
+}
 
-export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+if (!supabaseAnonKey) {
+  throw new Error('VITE_SUPABASE_ANON_KEY is not set. Please configure your Supabase anon key in the web environment.');
+}
+
+export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
     storage: localStorage,
     persistSession: true,

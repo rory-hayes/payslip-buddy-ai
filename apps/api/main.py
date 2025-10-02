@@ -1,13 +1,18 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from redis import Redis
 
-from apps.api.auth import AuthenticatedUser, get_current_user, require_internal_token
+from apps.api.auth import (
+    AuthenticatedUser,
+    get_current_or_internal,
+    get_current_user,
+    require_internal_token,
+)
 from apps.common.config import get_settings
 from apps.common.models import DossierChecklistItem, DossierMonth, DossierResponse, DossierTotals, JobKind, JobStatus
 from apps.common.supabase import get_supabase
@@ -56,10 +61,10 @@ async def trigger_job(payload: TriggerJobPayload, request: Request) -> Dict[str,
 
 
 @app.get("/internal/jobs/{job_id}")
-async def get_job(job_id: str, request: Request) -> Dict[str, Any]:
-    internal_header = request.headers.get("X-Internal-Token")
-    if internal_header:
-        require_internal_token(request)
+async def get_job(
+    job_id: str,
+    _: Optional[AuthenticatedUser] = Depends(get_current_or_internal),
+) -> Dict[str, Any]:
     supabase = get_supabase()
     job = supabase.table_select_single("jobs", match={"id": job_id})
     if not job:
