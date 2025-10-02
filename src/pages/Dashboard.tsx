@@ -106,10 +106,10 @@ export default function Dashboard() {
   };
 
   const confirmSnooze = async () => {
-    if (!selectedAnomaly?.payslips) return;
+    const payslip = selectedAnomaly?.payslips;
+    if (!payslip) return;
 
     // Calculate snooze date based on payslip period type
-    const payslip = selectedAnomaly.payslips;
     const baseDate = new Date(payslip.pay_date || new Date());
     let snoozedUntil = new Date(baseDate);
 
