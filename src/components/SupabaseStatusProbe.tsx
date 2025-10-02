@@ -20,7 +20,8 @@ export default function SupabaseStatusProbe() {
 
   useEffect(() => {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    if (!supabaseUrl) {
+    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    if (!supabaseUrl || !supabaseAnonKey) {
       setStatus("error");
       return;
     }
@@ -34,6 +35,10 @@ export default function SupabaseStatusProbe() {
         const response = await fetch(`${normalizeUrl(supabaseUrl)}${HEALTH_PATH}`, {
           method: "GET",
           mode: "cors",
+          headers: {
+            apikey: supabaseAnonKey,
+            Authorization: `Bearer ${supabaseAnonKey}`,
+          },
           signal: controller.signal,
         });
         if (!mounted) {
