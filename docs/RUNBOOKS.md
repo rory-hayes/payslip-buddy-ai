@@ -30,3 +30,24 @@
 2. Confirm with ClamAV: `clamdscan /path/to/file`.
 3. Notify the customer; do **not** attempt to open the PDF locally. Delete the Storage object and mark the `files` row as quarantined via `status='blocked'`.
 4. Create an incident ticket referencing the ClamAV signature returned.
+
+## OCR Fallback & Extraction Triage
+1. `jobs.meta.ocrFallback=true` indicates the worker rasterised the PDF and used Tesseract output instead of native text.
+2. Review the extracted fields under `jobs.meta.fields`; confidence ≥0.90 with all validations passing keeps the job in `done` state, otherwise it lands in review.
+3. When troubleshooting, download the source PDF and the `_redacted.png` preview. If OCR missed characters, re-upload a cleaner scan or manually key values.
+4. To reproduce locally, run `pytest tests/test_e2e.py::test_end_to_end_pipeline` which exercises the six golden fixtures (`scripts/fixtures/*.pdf`).
+
+## Snapshot Baselines
+1. Dossier and HR Pack rendering use deterministic payloads. Snapshot checks compare the rendered first page against hashed metrics stored in `tests/snapshots/baselines.json` (image dimensions, SHA-256 digest, mean pixel value).
+2. After intentional layout changes run `pytest tests/test_snapshots.py`; failing tests print the observed metrics so you can update `baselines.json` intentionally.
+3. Inspect the generated PDFs manually to confirm the change, then edit the JSON baselines with the new metrics. Keep the mean-difference tolerance within ±0.75 to catch regressions.
+
+## ClamAV Signature Updates
+1. The worker entrypoint runs `freshclam --stdout` on boot and every 24 hours; logs emit `[startup]` or `[freshclam]` lines.
+2. Signature version is logged on the first successful scan (`ClamAV signature version: ...`). Check worker logs to verify freshness.
+3. If updates fail, run `docker compose exec worker freshclam --stdout` (or equivalent in production) and investigate connectivity. Document incidents in `events` with type `antivirus_update_failure`.
+
+## LLM Spend Cap Monitoring
+1. `events` rows with type `llm_cap_reached` indicate the OpenAI budget was hit; the worker automatically skips further LLM calls and relies on native/OCR extraction.
+2. Query `llm_usage` for cumulative cost per user/day and compare to the configured cap.
+3. To re-enable, lift the cap or wait for the daily reset, then remove `disable_llm` flags from queued jobs and restart the worker.

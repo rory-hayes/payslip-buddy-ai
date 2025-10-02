@@ -11,12 +11,13 @@
 - Storage access always goes through signed URLs generated server-side; the worker uploads redacted previews using the service role.
 
 ## PII Minimisation & LLM Safety
-- Native parsing happens locally using pdfplumber/PyMuPDF; the worker redacts NI/PPS numbers, IBANs, DOBs, and address tokens before generating preview images.
-- Only redacted raster images are sent to OpenAI. Raw text or original PDFs never leave the secure environment. If the LLM spend cap is hit or OpenAI errors, the system falls back to native extraction and flags the job for manual review.
+- Native parsing (pdfplumber/PyMuPDF) and OCR (Tesseract) run entirely inside the worker. OCR text stays in memory long enough to improve native field extraction and is never persisted or transmitted externally.
+- The redaction step executes before any LLM call; only rasterised redacted images are shared with OpenAI. Raw PDFs, native text, and OCR output remain local to the worker.
+- If the LLM spend cap is hit or OpenAI errors, the system falls back to native/OCR extraction and flags the job for manual review. No additional data leaves the environment during fallback.
 - `llm_usage` logs capture tokens and cost to support audit and cap enforcement.
 
 ## Operational Hardening
-- ClamAV scans every PDF before processing. Infections mark the job failed and emit an event for the incident runbook.
+- ClamAV scans every PDF before processing. Signatures refresh via `freshclam` at boot and daily thereafter; the worker logs the active signature banner when the daemon is first contacted.
 - Retention cleanup runs daily (`cron.retention_cleanup`) deleting payslips older than the configured retention window and recording the count removed.
 - Export bundles and HR/Dossier PDFs are uploaded with unique filenames, and download links are scoped to the authenticated user.
 - Logs (Docker, Celery) should be forwarded to a central sink with secrets redacted; environment variables are limited to required credentials.
