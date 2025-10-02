@@ -1,0 +1,47 @@
+{
+  "overall_status": "green",
+  "checks": [
+    {
+      "id": "A7",
+      "name": "Frontend Supabase credentials",
+      "status": "pass",
+      "evidence": "src/integrations/supabase/client.ts"
+    },
+    {
+      "id": "A7-ci",
+      "name": "Supabase secret guard",
+      "status": "pass",
+      "evidence": "scripts/ci/check_supabase_keys.sh"
+    },
+    {
+      "id": "E1",
+      "name": "Internal job detail authentication",
+      "status": "pass",
+      "evidence": "apps/api/main.py, openapi/api.yaml"
+    },
+    {
+      "id": "D5",
+      "name": "Export ZIP contents",
+      "status": "pass",
+      "evidence": "apps/worker/services/reports.py, tests/test_e2e.py"
+    },
+    {
+      "id": "D4",
+      "name": "HR pack preview",
+      "status": "pass",
+      "evidence": "apps/worker/tasks.py, apps/worker/services/reports.py, tests/test_snapshots.py"
+    },
+    {
+      "id": "A2",
+      "name": "Knowledge base policy",
+      "status": "pass",
+      "evidence": "docs/SECURITY.md"
+    },
+    {
+      "id": "F6",
+      "name": "Pipeline metrics export",
+      "status": "pass",
+      "evidence": "tests/test_e2e.py, reports/pipeline_metrics.json"
+    }
+  ]
+}

@@ -39,16 +39,20 @@ class StorageService:
     def _build_path(self, user_id: str, name: str) -> str:
         return f"{user_id}/{name}"
 
-    def download_pdf(self, *, user_id: str, file_id: str, password: Optional[str] = None) -> StorageObject:
-        path = self._build_path(user_id, f"{file_id}.pdf")
-        LOGGER.info("Downloading PDF from storage", extra={"path": path})
+    def create_signed_url(self, path: str, expires_in: int = 300) -> str:
         try:
-            signed = self._supabase.storage.from_(self.bucket).create_signed_url(path, expires_in=300)
+            signed = self._supabase.storage.from_(self.bucket).create_signed_url(path, expires_in=expires_in)
         except StorageException as exc:
             raise FileNotFoundError(path) from exc
         url = signed.get("signedURL") or signed.get("signed_url")
         if not url:
             raise FileNotFoundError(path)
+        return url
+
+    def download_pdf(self, *, user_id: str, file_id: str, password: Optional[str] = None) -> StorageObject:
+        path = self._build_path(user_id, f"{file_id}.pdf")
+        LOGGER.info("Downloading PDF from storage", extra={"path": path})
+        url = self.create_signed_url(path)
         response = requests.get(url, timeout=30)
         response.raise_for_status()
         data = response.content
@@ -62,6 +66,14 @@ class StorageService:
         file_obj = io.BytesIO(data)
         self._supabase.storage.from_(self.bucket).upload(path, file_obj, {"upsert": True, "content-type": content_type})
         return StorageObject(path=path, bytes=data, content_type=content_type)
+
+    def fetch_signed_object(self, path: str, *, expires_in: int = 300) -> StorageObject:
+        LOGGER.info("Fetching signed object from storage", extra={"path": path})
+        url = self.create_signed_url(path, expires_in=expires_in)
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        content_type = response.headers.get("Content-Type", "application/octet-stream")
+        return StorageObject(path=path, bytes=response.content, content_type=content_type)
 
     def delete_objects(self, paths: list[str]) -> None:
         filtered = [path for path in paths if path]

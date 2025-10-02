@@ -1,51 +1,43 @@
 # Payslip Companion — PRD Compliance Audit (Final)
 
 ## 1. Executive Summary
-**Overall Status: Green.** OCR fallback, validation heuristics, and end-to-end automation align with the PRD. All golden fixtures autoparse without review, anomaly regression harness covers every rule, and ClamAV signature management is automated with runbook support. No blocking gaps remain for launch-readiness.
+**Overall Status: Green.** Secrets hygiene, internal API controls, and export fidelity issues identified in audit3 are now remediated. The frontend reads Supabase credentials from environment variables and CI blocks hard-coded keys, the worker bundles signed PDFs alongside structured CSV exports, and HR pack artifacts embed a linked redacted preview. Automated metrics confirm autoparse and identity validation rates comfortably exceed launch thresholds.
 
 ## 2. Scope & Version
-- Commit: 4646778d6739346dccaf5e87852e5870eb58f1d7
-- Date: 2025-02-14
-- Environment: Local container (pytest, Node 18)
+- Branch: worktree (post-remediation)
+- Date: 2025-10-02
+- Environment: Local container (Node 18 / Python 3.12) with `npm run check:supabase` and `pytest` executed
 
 ## 3. Feature Compliance Matrix
-| PRD Area | Requirement | Status | Evidence (path:line) | Notes |
+| PRD Area | Requirement | Status | Evidence | Notes |
 | --- | --- | --- | --- | --- |
-| Storage RLS | Owner-prefix enforced for storage bucket and tables | Pass | `supabase/migrations/20251001085648_019b9631-14c6-48e7-ab7f-89cdaa80e5c5.sql`【F:supabase/migrations/20251001085648_019b9631-14c6-48e7-ab7f-89cdaa80e5c5.sql†L4-L45】 | Policies gate access to `{user_id}/...` keys and per-user rows. |
-| Table RLS | Files, payslips, anomalies, settings, jobs, redactions, llm_usage, events | Pass | `supabase/migrations/20250930190522_2567d9c5-45c4-442c-9fc5-49e70ba1fb51.sql`【F:supabase/migrations/20250930190522_2567d9c5-45c4-442c-9fc5-49e70ba1fb51.sql†L20-L133】 | RLS enabled with CRUD policies scoped by `user_id`. |
-| Frontend contracts | ReviewDrawer props & confidence UI | Pass | `src/components/ReviewDrawer.tsx`【F:src/components/ReviewDrawer.tsx†L18-L170】 | Drawer maintains prop surface and gating thresholds. |
-| Frontend contracts | Dashboard conflict resolve / snooze / mute workflows | Pass | `src/pages/Dashboard.tsx`【F:src/pages/Dashboard.tsx†L1-L195】 | Conflict resolution, snooze, and mute flows wired to Supabase. |
-| Frontend contracts | Upload stepper & password flow | Pass | `src/pages/Upload.tsx`【F:src/pages/Upload.tsx†L1-L137】 | Upload screen handles drag/drop, password prompts, and job polling. |
-| Frontend contracts | Settings jobs (retention, locale, region) | Pass | `src/pages/Settings.tsx`【F:src/pages/Settings.tsx†L16-L259】 | Settings page reads/writes retention, locale, and regional options. |
-| Worker pipeline | Extract → anomalies → dossier/export/delete/retention | Pass | `apps/worker/tasks.py`【F:apps/worker/tasks.py†L154-L422】 | Pipeline enforces OCR fallback, validations, anomaly chaining, and artifact jobs. |
-| OCR fallback | Rasterise + Tesseract when native text weak | Pass | `apps/worker/services/pdf.py`【F:apps/worker/services/pdf.py†L70-L201】, `apps/worker/tasks.py`【F:apps/worker/tasks.py†L170-L205】 | Native parse merges OCR output before validations. |
-| Spend cap controls | LLM spend cap gating + usage logging | Pass | `apps/worker/services/llm.py`【F:apps/worker/services/llm.py†L70-L152】 | Blocks vision calls past cap and records tokens/cost. |
-| Redaction policy | Only redacted imagery leaves worker | Pass | `apps/worker/tasks.py`【F:apps/worker/tasks.py†L180-L205】 | Rasterised previews created prior to any LLM invocation. |
-| Docs & Ops | RUNBOOKS, SECURITY, DPIA refreshed | Pass | `docs/RUNBOOKS.md`【F:docs/RUNBOOKS.md†L34-L53】, `docs/SECURITY.md`【F:docs/SECURITY.md†L13-L21】, `docs/DPIA.md`【F:docs/DPIA.md†L13-L39】 | New sections cover OCR triage, ClamAV updates, and privacy posture. |
+| Secrets Hygiene (A7) | FE must not ship Supabase credentials | Pass | `src/integrations/supabase/client.ts`【F:src/integrations/supabase/client.ts†L1-L22】 | Throws if env vars missing; Lovable docs updated with new `.env` sample. |
+| Secrets Guard (A7) | CI rejects hard-coded URLs/keys | Pass | `scripts/ci/check_supabase_keys.sh`【F:scripts/ci/check_supabase_keys.sh†L1-L22】 | Script wired via `npm run check:supabase`. |
+| Internal API Security (E1) | `/internal/jobs/{id}` requires token or JWT | Pass | `apps/api/main.py`【F:apps/api/main.py†L63-L72】, `openapi/api.yaml`【F:openapi/api.yaml†L68-L93】 | Dependency enforces header/JWT with documented 401/403 responses. |
+| Export Bundle (D5) | ZIP contains PDFs + CSVs | Pass | `apps/worker/services/reports.py`【F:apps/worker/services/reports.py†L132-L161】, `tests/test_e2e.py`【F:tests/test_e2e.py†L167-L208】 | Worker fetches PDFs via signed URLs; test asserts coverage. |
+| HR Pack Preview (D4) | HR pack includes redacted preview link | Pass | `apps/worker/tasks.py`【F:apps/worker/tasks.py†L443-L487】, `apps/worker/services/reports.py`【F:apps/worker/services/reports.py†L48-L95】 | Signed preview embedded with inline thumbnail + link. |
+| Knowledge Base Policy (A2) | Authenticated-read documented | Pass | `docs/SECURITY.md`【F:docs/SECURITY.md†L8-L13】 | Security doc clarifies KB remains app-auth only. |
+| Pipeline Metrics (F6) | Post-run metrics export | Pass | `tests/test_e2e.py`【F:tests/test_e2e.py†L195-L207】, `reports/pipeline_metrics.json`【F:reports/pipeline_metrics.json†L1-L7】 | E2E writes autoparse/identity/anomaly report for ops review. |
 
-## 4. Schema Snapshot
-- Storage prefix policies ensure objects live under `{user_id}/…` paths for upload, read, and delete.【F:supabase/migrations/20251001085648_019b9631-14c6-48e7-ab7f-89cdaa80e5c5.sql†L4-L33】
-- Core tables (`files`, `payslips`, `anomalies`, `settings`, `jobs`, `redactions`, `llm_usage`, `events`) enforce per-user RLS with CRUD policies.【F:supabase/migrations/20250930190522_2567d9c5-45c4-442c-9fc5-49e70ba1fb51.sql†L20-L133】
+## 4. Security & Privacy
+- Rotated Supabase anon key guidance and CI guard steps documented in RUNBOOKS, preventing credential regression and recording the prior rotation.【F:docs/RUNBOOKS.md†L3-L66】
+- Internal token lookup now honors the new `INTERNAL_TOKEN` environment variable for both trigger and read-only job flows, ensuring consistency across services.【F:apps/common/config.py†L1-L32】【F:apps/api/main.py†L46-L72】
 
-## 5. Security & Privacy
-- Native parsing and OCR execute inside the worker; OCR text never leaves the container.【F:docs/SECURITY.md†L13-L17】
-- Redaction renders previews prior to LLM calls ensuring only masked imagery is shared externally.【F:apps/worker/tasks.py†L180-L205】
-- Spend cap enforcement prevents overuse and logs cost telemetry in `llm_usage`.【F:apps/worker/services/llm.py†L85-L152】
-- ClamAV signatures refresh on boot and daily via entrypoint cron; version logged during first scan.【F:infra/dockerfiles/worker-entrypoint.sh†L4-L15】【F:apps/worker/services/antivirus.py†L19-L43】
+## 5. Data Portability & Reporting
+- Export bundles include machine-readable CSVs plus the original PDFs under `pdfs/<file_id>.pdf`, satisfying PRD portability guarantees.【F:apps/worker/services/reports.py†L132-L161】
+- HR pack PDFs surface a redacted preview image and download link so reviewers can quickly correlate summaries with underlying source material.【F:apps/worker/services/reports.py†L60-L95】【F:apps/worker/tasks.py†L443-L487】
+- `reports/pipeline_metrics.json` captures autoparse rate (1.0), identity pass rate (1.0), and anomaly rule counts after each E2E run for audit trails.【F:reports/pipeline_metrics.json†L1-L7】【F:tests/test_e2e.py†L195-L207】
 
 ## 6. Test Results
-- Fixture autoparse: 6/6 golden PDFs completed without review via `tests/test_e2e.py::test_end_to_end_pipeline`.【F:tests/test_e2e.py†L60-L166】
-- Anomaly regression: synthetic history triggers every rule and keeps neutral sequences clean.【F:tests/test_anomalies.py†L38-L61】【F:scripts/generate_history.py†L22-L87】
-- Snapshot baselines: dossier and HR Pack PDFs match stored images within RMS tolerance.【F:tests/test_snapshots.py†L34-L45】
-- Full suite: `pytest` (15 tests) passed in container.【fc4782†L1-L12】
+- `pytest` (16 tests) covering anomaly regression, E2E pipeline, privacy guards, and updated snapshots — **PASS**.【beb554†L1-L12】
+- HR pack snapshot baseline refreshed to track the embedded preview element.【F:tests/test_snapshots.py†L48-L60】【F:tests/snapshots/baselines.json†L1-L16】
 
-## 7. Known Limitations / Future Work
-- Monitor OCR accuracy on real-world scans; adjust language packs (`eng`, `enm`, `gle`) if noise appears.【F:CODEX_RUNLOG.md†L26-L30】
-- Upstream WeasyPrint/Pydyf compatibility would remove the fallback renderer currently used for PDF snapshots.【F:CODEX_RUNLOG.md†L26-L30】【F:apps/worker/services/reports.py†L63-L82】
-- Ensure production logging captures `[freshclam]` updates after deployments.【F:docs/RUNBOOKS.md†L45-L48】
+## 7. Known Limitations / Follow-ups
+- Storage fetches rely on signed URLs; ensure Supabase storage network egress remains allowed during HR pack generation.【F:apps/worker/services/storage.py†L24-L76】
+- Legacy knowledge base policy still scopes to authenticated users; if anonymous read becomes required, provision an additive migration and update docs accordingly.【F:docs/SECURITY.md†L8-L13】
 
 ## 8. Definition of Done Sign-off
-- [x] OCR fallback implemented with confidence gating.【F:apps/worker/tasks.py†L170-L264】
-- [x] Golden fixtures, anomaly regression, e2e, and snapshot tests automated.【F:tests/test_e2e.py†L60-L166】【F:tests/test_anomalies.py†L38-L61】【F:tests/test_snapshots.py†L34-L45】
-- [x] ClamAV signature automation documented and operational.【F:infra/dockerfiles/worker-entrypoint.sh†L4-L15】【F:docs/RUNBOOKS.md†L45-L48】
-- [x] RUNBOOKS, SECURITY, DPIA reflect OCR/ClamAV updates.【F:docs/RUNBOOKS.md†L34-L53】【F:docs/SECURITY.md†L13-L21】【F:docs/DPIA.md†L13-L39】
+- [x] Secrets moved to environment variables and CI guard enabled.【F:src/integrations/supabase/client.ts†L1-L22】【F:scripts/ci/check_supabase_keys.sh†L1-L22】
+- [x] Internal job detail endpoint demands token/JWT per PRD.【F:apps/api/main.py†L63-L72】【F:openapi/api.yaml†L68-L93】
+- [x] Export ZIP bundles contain PDFs and CSVs verified by automated tests.【F:apps/worker/services/reports.py†L132-L161】【F:tests/test_e2e.py†L167-L208】
+- [x] HR pack includes redacted preview link and passes snapshot guard.【F:apps/worker/tasks.py†L443-L487】【F:tests/test_snapshots.py†L48-L60】

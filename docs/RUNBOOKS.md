@@ -1,5 +1,10 @@
 # Payslip Companion Runbooks
 
+## Secrets Hygiene & Supabase Keys
+1. The Supabase anon key checked into earlier commits has been rotated. Never hard-code project URLs or keys; configure them via `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in the web `.env` file (see `apps/web/.env.sample`).
+2. Run `npm run check:supabase` locally or in CI. The script (`scripts/ci/check_supabase_keys.sh`) scans tracked files for common Supabase tokens and fails the build if one is detected.
+3. If rotation is required again, update the environment variables in Lovable/CI, invalidate previous keys in the Supabase dashboard, and document the change in this section.
+
 ## LLM Outage or Spend Cap Triggered
 1. Inspect the most recent `events` rows for `llm_cap_reached` or `llm_error` to confirm the failure mode.
 2. Query `llm_usage` for the affected `user_id` and day: `select sum(cost) from llm_usage where user_id = :id and created_at >= date_trunc('day', now());` Compare the sum against `LLM_SPEND_DAILY_CAP_USD` in the API environment.
@@ -51,3 +56,11 @@
 1. `events` rows with type `llm_cap_reached` indicate the OpenAI budget was hit; the worker automatically skips further LLM calls and relies on native/OCR extraction.
 2. Query `llm_usage` for cumulative cost per user/day and compare to the configured cap.
 3. To re-enable, lift the cap or wait for the daily reset, then remove `disable_llm` flags from queued jobs and restart the worker.
+## Exports & Data Portability
+1. `jobs(kind='export_all')` now uploads a ZIP bundle containing `payslips.csv`, `files.csv`, `anomalies.csv`, `settings.csv`, and every source PDF under `pdfs/<file_id>.pdf`.
+2. If a PDF is missing from the bundle, confirm the Storage object exists (`<user_id>/<file_id>.pdf`) and rerun the export job.
+3. Export artifacts remain available under the user's storage prefix; signed download URLs are written to the job metadata.
+
+## Pipeline Metrics Export
+1. After `pytest tests/test_e2e.py::test_end_to_end_pipeline` completes, review `reports/pipeline_metrics.json` for the latest autoparse rate, identity validation pass rate, and anomaly rule counts.
+2. The JSON report is regenerated on every end-to-end run and should show `autoparse_rate ≥ 0.85` and `identity_pass_rate ≥ 0.98` before promoting builds.

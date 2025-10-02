@@ -1,0 +1,7 @@
+{
+  "anomaly_counts": {
+    "NET_DROP": 1
+  },
+  "autoparse_rate": 1.0,
+  "identity_pass_rate": 1.0
+}
