@@ -2,7 +2,7 @@
 
 ## Secrets Hygiene & Supabase Keys
 1. The Supabase anon key checked into earlier commits has been rotated. Never hard-code project URLs or keys; configure them via `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in the web `.env` file (see `apps/web/.env.sample`).
-2. Run `npm run check:supabase` locally or in CI. The script (`scripts/ci/check_supabase_keys.sh`) scans tracked files for common Supabase tokens and fails the build if one is detected.
+2. Run `npm run ci:verify` locally or in CI. The chained script (`scripts/ci/check_audit_green.sh` + `scripts/ci/check_supabase_keys.sh`) confirms `AUDIT.md` still reports Green and scans tracked files for common Supabase tokens, failing fast if issues are detected.
 3. If rotation is required again, update the environment variables in Lovable/CI, invalidate previous keys in the Supabase dashboard, and document the change in this section.
 
 ## LLM Outage or Spend Cap Triggered

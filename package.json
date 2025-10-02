@@ -9,7 +9,10 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
-    "check:supabase": "./scripts/ci/check_supabase_keys.sh"
+    "check:audit": "./scripts/ci/check_audit_green.sh",
+    "check:supabase": "./scripts/ci/check_supabase_keys.sh",
+    "ci:verify": "npm run check:audit && npm run check:supabase",
+    "prebuild": "npm run ci:verify"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
