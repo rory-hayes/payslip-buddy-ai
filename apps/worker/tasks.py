@@ -41,7 +41,7 @@ from apps.worker.services.reports import (
     generate_dossier_pdf,
     generate_hr_pack_pdf,
 )
-from apps.worker.services.storage import StorageService, get_storage_service
+from apps.worker.services.storage import StorageObject, StorageService, get_storage_service
 from apps.worker.services.validation import (
     calculate_confidence,
     count_native_fields,
@@ -132,11 +132,40 @@ def _needs_ocr(native: NativeExtraction, text: PdfText) -> bool:
     return count_native_fields(native) < 4
 
 
-def _llm_extract(user_id: str, file_id: Optional[str], redacted_images: List[bytes]) -> Optional[LlmResponse]:
+def _percentify_boxes(boxes: List[Dict[str, float]]) -> List[Dict[str, float]]:
+    percent_boxes: List[Dict[str, float]] = []
+    for box in boxes:
+        percent_box = dict(box)
+        for key in ("x", "y", "w", "h"):
+            value = percent_box.get(key, 0)
+            if value is None:
+                continue
+            if value <= 1:
+                value = value * 100
+            value = max(0.0, min(float(value), 100.0))
+            percent_box[key] = round(value, 4)
+        percent_boxes.append(percent_box)
+    return percent_boxes
+
+
+def _llm_extract(
+    user_id: str,
+    file_id: Optional[str],
+    redacted_previews: List[StorageObject],
+) -> Optional[LlmResponse]:
     settings = get_settings()
     if not settings.openai_api_key:
         LOGGER.info("OpenAI API key missing; skipping LLM extraction")
         return None
+    redacted_images = [preview.bytes for preview in redacted_previews]
+    LOGGER.info(
+        "Sending redacted previews to LLM",
+        extra={
+            "user_id": user_id,
+            "file_id": file_id,
+            "previews": [preview.path for preview in redacted_previews],
+        },
+    )
     try:
         client = LlmVisionClient()
         return client.infer(user_id=user_id, file_id=file_id, redacted_images=redacted_images)
@@ -184,19 +213,25 @@ def job_extract(job_id: str) -> None:
                 text = _merge_pdf_text(text, ocr_text)
                 used_ocr = True
         redaction = redact_text(text.raw_text)
+        percent_boxes = _percentify_boxes(redaction.boxes)
         rasterized = rasterize_first_pages(decrypted_pdf, pages=2)
         preview_image = redaction.preview_png or rasterized[0].png_bytes
-        storage.upload_bytes(
+        preview_artifact = storage.upload_bytes(
             user_id=job["user_id"],
             name=f"{file_row['id']}_redacted.png",
             content_type="image/png",
             data=preview_image,
         )
-        _record_redactions(job["user_id"], file_row["id"], redaction.boxes)
+        supabase.update_row(
+            "files",
+            match={"id": file_row["id"]},
+            updates={"s3_key_redacted": preview_artifact.path},
+        )
+        _record_redactions(job["user_id"], file_row["id"], percent_boxes)
         disable_llm = (job.get("meta") or {}).get("disable_llm")
         llm_response = None
         if not disable_llm:
-            llm_response = _llm_extract(job["user_id"], job.get("file_id"), [page.png_bytes for page in rasterized])
+            llm_response = _llm_extract(job["user_id"], job.get("file_id"), [preview_artifact])
     except AntivirusError as exc:
         _update_job(job_id, {"status": JobStatus.FAILED.value, "error": f"Antivirus detected threat: {exc}"})
         return
@@ -294,8 +329,8 @@ def job_extract(job_id: str) -> None:
             "fields": merged,
             "confidence": confidence,
             "reviewRequired": review_required,
-            "imageUrl": f"{job['user_id']}/{file_row['id']}_redacted.png",
-            "highlights": redaction.boxes,
+            "imageUrl": preview_artifact.path,
+            "highlights": percent_boxes,
             "validations": validations,
             "ocrFallback": used_ocr,
         }

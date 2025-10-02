@@ -8,7 +8,7 @@
 5. After reset, clear `disable_llm` metadata, restart the worker, and monitor the next five jobs to confirm tokens/costs are being recorded again.
 
 ## Storage / RLS Troubleshooting
-1. Check `files` for the `user_id`/`file_id` pair and ensure `storage_path` matches `{user_id}/{file_id}.pdf`.
+1. Check `files` for the `user_id`/`file_id` pair and ensure `s3_key_original` matches `{user_id}/{file_id}.pdf` (fallback `storage_path` remains for legacy rows).
 2. With the service role key, call the Supabase Storage signed URL API; if the object is missing, re-upload from the original PDF (kept in the export bundle under `/pdfs`).
 3. Validate storage policies: the payslips bucket must enforce `starts_with(object.name, auth.uid())`.
 4. If RLS blocks table reads, verify JWT `sub` equals the `user_id` and that the role has `files`/`payslips` select policies granting access.

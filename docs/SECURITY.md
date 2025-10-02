@@ -12,7 +12,7 @@
 
 ## PII Minimisation & LLM Safety
 - Native parsing (pdfplumber/PyMuPDF) and OCR (Tesseract) run entirely inside the worker. OCR text stays in memory long enough to improve native field extraction and is never persisted or transmitted externally.
-- The redaction step executes before any LLM call; only rasterised redacted images are shared with OpenAI. Raw PDFs, native text, and OCR output remain local to the worker.
+- The redaction step executes before any LLM call; only the generated redacted preview PNGs (stored as `{user_id}/{file_id}_redacted.png`) are shared with OpenAI. Raw PDFs, native text, and OCR output remain local to the worker and never cross the network boundary.
 - If the LLM spend cap is hit or OpenAI errors, the system falls back to native/OCR extraction and flags the job for manual review. No additional data leaves the environment during fallback.
 - `llm_usage` logs capture tokens and cost to support audit and cap enforcement.
 

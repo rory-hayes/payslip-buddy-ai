@@ -51,9 +51,12 @@ from apps.worker.tasks import job_detect_anomalies, job_dossier, job_export_all,
 @pytest.fixture
 def ocr_mapping():
     return {
+        "uk_text": "ACME Payroll\nEmployer: ACME Ltd\nGross Pay: £3,200.00\nIncome Tax: £520.00\nNational Insurance: £280.00\nPension (Employee): £160.00\nStudent Loan: £75.00\nNet Pay: £2,165.00\nTax Code: 1257L",  # noqa: E501
         "uk_scan": "Example Payslip\nEmployer: ACME Ltd\nGross Pay: £3,200.00\nIncome Tax: £520.00\nNational Insurance: £280.00\nPension (Employee): £160.00\nStudent Loan: £75.00\nNet Pay: £2,165.00\nTax Code: 1257L",  # noqa: E501
+        "ie_text": "Irish Payslip\nEmployer: Emerald Services\nGross Pay: €3,000.00\nIncome Tax: €450.00\nPRSI: €180.00\nPension (Employee): €90.00\nNet Pay: €2,280.00\nTax Code: S1",  # noqa: E501
         "ie_scan": "Irish Payslip\nEmployer: Emerald Services\nGross Pay: €3,000.00\nIncome Tax: €450.00\nPRSI: €180.00\nPension (Employee): €90.00\nNet Pay: €2,280.00\nTax Code: S1",  # noqa: E501
-        "password": "Confidential Payslip\nGross Pay: £2,000.00\nNet Pay: £1,400.00\nTax Code: 1257L",
+        "password": "Confidential Payslip\nGross Pay: £2,000.00\nIncome Tax: £300.00\nNational Insurance: £150.00\nPension (Employee): £100.00\nStudent Loan: £50.00\nNet Pay: £1,400.00\nTax Code: 1257L",
+        "multi_page": "Quarterly Summary\nGross Pay: £9,600.00\nIncome Tax: £1,560.00\nNational Insurance: £840.00\nPension (Employee): £300.00\nStudent Loan: £0.00\nNet Pay: £6,900.00",
     }
 
 
@@ -90,7 +93,14 @@ def test_end_to_end_pipeline(monkeypatch, fake_supabase, fake_storage, fixture_s
     status_map: dict[str, str] = {}
     for fixture in fixtures:
         file_id = fixture
-        fake_supabase.insert_row("files", {"id": file_id, "user_id": user_id})
+        fake_supabase.insert_row(
+            "files",
+            {
+                "id": file_id,
+                "user_id": user_id,
+                "s3_key_original": f"{user_id}/{file_id}.pdf",
+            },
+        )
         job_id = f"job-{file_id}"
         fake_supabase.insert_row(
             "jobs",
