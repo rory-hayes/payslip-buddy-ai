@@ -44,7 +44,7 @@ def require_internal_token(request: Request) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
 
-async def get_current_or_internal(request: Request) -> Optional[AuthenticatedUser]:
+async def require_internal_or_authenticated(request: Request) -> Optional[AuthenticatedUser]:
     internal = request.headers.get("X-Internal-Token")
     if internal:
         require_internal_token(request)

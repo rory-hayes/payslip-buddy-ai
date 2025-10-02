@@ -2,7 +2,7 @@
 
 ## Supabase client uses environment variables
 ```diff
--const SUPABASE_URL = "https://lmmjnsqxvadbygfsavke.supabase.co";
+-const SUPABASE_URL = "https://project.supabase.co";
 -const SUPABASE_PUBLISHABLE_KEY = "<hard-coded anon key>";
 -export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
 +const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -12,6 +12,23 @@
 +}
 +export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
 ```【F:src/integrations/supabase/client.ts†L1-L22】
+
+## Frontend runtime guard rails for Vercel
+```diff
++import { ErrorBoundary } from "./components/ErrorBoundary";
++import { EnvironmentGate } from "./components/EnvironmentGate";
++
++createRoot(rootElement).render(
++  <StrictMode>
++    <ErrorBoundary>
++      <EnvironmentGate>
++        <App />
++      </EnvironmentGate>
++    </ErrorBoundary>
++  </StrictMode>,
++);
+```
+Lazy-loaded status probe surfaces Supabase outages and env gate halts rendering when Vercel variables are missing.【F:src/main.tsx†L1-L24】【F:src/components/EnvironmentGate.tsx†L1-L57】【F:src/components/SupabaseStatusProbe.tsx†L1-L60】
 
 ## Internal job detail authentication
 ```diff
@@ -98,7 +115,7 @@ Worker fetches the latest redacted PNG, signs it, and attaches base64 data befor
 
 ## Supabase secret guard script
 ```diff
-+PATTERN='(https://[a-z0-9-]{12,}\.supabase\.co|eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9)'
++PATTERN='(<SUPABASE_URL_REGEX>|<JWT_PREFIX_REGEX>)'
 +
 +violations=()
 +while IFS= read -r file; do
@@ -117,4 +134,4 @@ Worker fetches the latest redacted PNG, signs it, and attaches base64 data befor
 +fi
 +
 +echo "Supabase secret guard passed."
-```${F:scripts/ci/check_supabase_keys.sh†L1-L22}
+```【F:scripts/ci/check_supabase_keys.sh†L1-L22】

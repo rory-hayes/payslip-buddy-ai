@@ -9,8 +9,8 @@ from redis import Redis
 
 from apps.api.auth import (
     AuthenticatedUser,
-    get_current_or_internal,
     get_current_user,
+    require_internal_or_authenticated,
     require_internal_token,
 )
 from apps.common.config import get_settings
@@ -63,7 +63,7 @@ async def trigger_job(payload: TriggerJobPayload, request: Request) -> Dict[str,
 @app.get("/internal/jobs/{job_id}")
 async def get_job(
     job_id: str,
-    _: Optional[AuthenticatedUser] = Depends(get_current_or_internal),
+    _: Optional[AuthenticatedUser] = Depends(require_internal_or_authenticated),
 ) -> Dict[str, Any]:
     supabase = get_supabase()
     job = supabase.table_select_single("jobs", match={"id": job_id})

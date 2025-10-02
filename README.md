@@ -83,4 +83,4 @@ The anon key shipped in previous revisions has been revoked; production and prev
 
 ## CI safety checks
 
-Run `npm run check:supabase` locally (and in CI) to block hard-coded Supabase URLs or anon keys from landing in the repository. The script scans tracked files for common token patterns and fails fast when secrets are detected.
+Run `npm run ci:verify` locally (and in CI) to confirm `AUDIT.md` remains GREEN and to block hard-coded Supabase URLs or anon keys from landing in the repository. The script chains the audit guard and the Supabase secret scan so deploys fail fast when compliance drifts.

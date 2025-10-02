@@ -14,6 +14,12 @@
       "evidence": "scripts/ci/check_supabase_keys.sh"
     },
     {
+      "id": "audit_guard",
+      "name": "AUDIT status gate",
+      "status": "pass",
+      "evidence": "scripts/ci/check_audit_green.sh"
+    },
+    {
       "id": "E1",
       "name": "Internal job detail authentication",
       "status": "pass",
