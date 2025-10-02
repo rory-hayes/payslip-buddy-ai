@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DollarSign, TrendingUp, Wallet, PiggyBank, Upload, FileText, AlertTriangle, Clock, Volume2, VolumeX } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Payslip, Anomaly } from '@/types/database';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { formatMoney, formatDate } from '@/lib/format';
 import { inferPeriodType } from '@/lib/period';
@@ -74,7 +74,18 @@ export default function Dashboard() {
     },
   });
 
-  const employers = Array.from(new Set(payslips?.map(p => p.employer_name).filter(Boolean)));
+  const employers = useMemo(() => {
+    if (!payslips) return [] as string[];
+
+    return Array.from(
+      new Set(
+        payslips
+          .map((p) => p.employer_name)
+          .filter((name): name is string => Boolean(name))
+      )
+    );
+  }, [payslips]);
+
   const filteredPayslips = payslips?.filter(p => {
     const matchesEmployer = selectedEmployer === 'all' || p.employer_name === selectedEmployer;
     
@@ -86,16 +97,23 @@ export default function Dashboard() {
   });
 
   // Detect conflicts: multiple payslips for same (employer, period_start, period_end)
-  const conflictGroups = allPayslips?.reduce((acc, payslip) => {
-    if (!payslip.employer_name || !payslip.period_start || !payslip.period_end) return acc;
-    
-    const key = `${payslip.employer_name}-${payslip.period_start}-${payslip.period_end}`;
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(payslip);
-    return acc;
-  }, {} as Record<string, Payslip[]>);
+  const conflictGroups = useMemo(() => {
+    return (allPayslips ?? []).reduce((acc, payslip) => {
+      if (!payslip.employer_name || !payslip.period_start || !payslip.period_end) {
+        return acc;
+      }
 
-  const hasConflicts = Object.values(conflictGroups || {}).some(group => group.length > 1);
+      const key = `${payslip.employer_name}-${payslip.period_start}-${payslip.period_end}`;
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(payslip);
+      return acc;
+    }, {} as Record<string, Payslip[]>);
+  }, [allPayslips]);
+
+  const hasConflicts = useMemo(
+    () => Object.values(conflictGroups).some(group => group.length > 1),
+    [conflictGroups]
+  );
 
   const latestPayslip = filteredPayslips?.[0];
 
@@ -106,14 +124,25 @@ export default function Dashboard() {
   };
 
   const confirmSnooze = async () => {
-    const payslip = selectedAnomaly?.payslips;
-    if (!payslip) return;
+    const anomalyPayslipData = selectedAnomaly?.payslips as Payslip | Payslip[] | undefined;
+    const relatedPayslip = Array.isArray(anomalyPayslipData)
+      ? anomalyPayslipData[0]
+      : anomalyPayslipData;
+
+    if (!relatedPayslip) {
+      toast({
+        title: 'Unable to snooze',
+        description: 'No payslip information available for this alert.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     // Calculate snooze date based on payslip period type
-    const baseDate = new Date(payslip.pay_date || new Date());
+    const baseDate = new Date(relatedPayslip.pay_date || new Date());
     let snoozedUntil = new Date(baseDate);
 
-    switch (payslip.period_type) {
+    switch (relatedPayslip.period_type) {
       case 'weekly':
         snoozedUntil.setDate(snoozedUntil.getDate() + (7 * snoozePeriods));
         break;
@@ -295,7 +324,7 @@ export default function Dashboard() {
         )}
 
         {/* Conflict Resolution */}
-        {hasConflicts && Object.entries(conflictGroups || {}).map(([key, group]) => {
+        {hasConflicts && Object.entries(conflictGroups).map(([key, group]) => {
           if (group.length <= 1) return null;
           
           return (
