@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Sheet,
   SheetContent,
@@ -12,28 +12,13 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { AlertCircle, CheckCircle } from 'lucide-react';
 import { formatMoney } from '@/lib/format';
-
-// NOTE: Highlight coordinates are PERCENT (0..100) of the rendered image width/height
-// Backend should provide coordinates as percentages for responsive overlay rendering
-export interface Highlight {
-  x: number;       // X position as percentage (0-100)
-  y: number;       // Y position as percentage (0-100)
-  w: number;       // Width as percentage (0-100)
-  h: number;       // Height as percentage (0-100)
-  label: string;   // Field label (e.g., "Net Pay", "Gross Pay")
-}
+import type { Highlight, ReviewFields } from '@/types/review';
 
 export interface ReviewDrawerProps {
   open: boolean;
   imageUrl: string;
   highlights: Highlight[];
-  fields: {
-    gross: number | null;
-    net: number | null;
-    tax_income: number | null;
-    ni_prsi: number | null;
-    pension_employee: number | null;
-  };
+  fields: ReviewFields;
   confidence?: number;
   reviewRequired: boolean;
   currency?: string;
@@ -54,6 +39,10 @@ export function ReviewDrawer({
 }: ReviewDrawerProps) {
   const [fields, setFields] = useState(initialFields);
   const [confirming, setConfirming] = useState(false);
+
+  useEffect(() => {
+    setFields(initialFields);
+  }, [initialFields]);
 
   const needsReview = reviewRequired || confidence < 0.9;
 

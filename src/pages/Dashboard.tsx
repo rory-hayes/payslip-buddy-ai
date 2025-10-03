@@ -17,6 +17,7 @@ import { formatMoney, formatDate } from '@/lib/format';
 import { inferPeriodType } from '@/lib/period';
 import { resolveConflictGroup } from '@/lib/conflicts';
 import { useAuth } from '@/contexts/AuthContext';
+import { YearlySummaryTrigger } from '@/components/YearlySummaryTrigger';
 
 export default function Dashboard() {
   const supabase = getSupabaseClient();
@@ -288,12 +289,15 @@ export default function Dashboard() {
             <h1 className="text-3xl font-bold">Dashboard</h1>
             <p className="text-muted-foreground mt-1">Your payslip overview and insights</p>
           </div>
-          <Button asChild>
-            <Link to="/upload">
-              <Upload className="mr-2 h-4 w-4" />
-              Upload Payslip
-            </Link>
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+            <Button asChild>
+              <Link to="/upload">
+                <Upload className="mr-2 h-4 w-4" />
+                Upload Payslip
+              </Link>
+            </Button>
+            <YearlySummaryTrigger className="sm:justify-end" />
+          </div>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-4">

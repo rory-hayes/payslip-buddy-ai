@@ -13,7 +13,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { PasswordPromptModal } from '@/components/PasswordPromptModal';
 import CryptoJS from 'crypto-js';
 import { Job } from '@/types/database';
-import { JobKind, JobStatus } from '@/types/jobs';
+import { ReviewDrawer } from '@/components/ReviewDrawer';
+import type { ReviewContext, ReviewFields } from '@/types/review';
+import { resolveStorageUrl } from '@/lib/storage';
 
 export default function Upload() {
   const supabase = getSupabaseClient();
@@ -23,13 +25,25 @@ export default function Upload() {
   const [passwordProtected, setPasswordProtected] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [currentJob, setCurrentJob] = useState<Job | null>(null);
+  const [handledJobCompletion, setHandledJobCompletion] = useState(false);
+  const [reviewDrawerOpen, setReviewDrawerOpen] = useState(false);
+  const [reviewContext, setReviewContext] = useState<ReviewContext | null>(null);
+  const [activeReviewJobId, setActiveReviewJobId] = useState<string | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
   const navigate = useNavigate();
 
+  const emptyReviewFields: ReviewFields = {
+    gross: null,
+    net: null,
+    tax_income: null,
+    ni_prsi: null,
+    pension_employee: null,
+  };
+
   // Poll for job status updates
   useEffect(() => {
-    if (!currentJob || currentJob.status === 'done' || currentJob.status === 'failed') {
+    if (!currentJob || ['done', 'failed'].includes(currentJob.status)) {
       return;
     }
 
@@ -42,25 +56,87 @@ export default function Upload() {
 
       if (!error && data) {
         setCurrentJob(data as Job);
-        
-        if (data.status === 'done') {
-          toast({
-            title: 'Processing complete',
-            description: 'Your payslip has been extracted successfully',
-          });
-          setTimeout(() => navigate('/dashboard'), 1500);
-        } else if (data.status === 'failed') {
-          toast({
-            title: 'Processing failed',
-            description: data.error || 'An error occurred during extraction',
-            variant: 'destructive',
-          });
+        if (['queued', 'running'].includes(data.status)) {
+          setHandledJobCompletion(false);
         }
       }
     }, 2500);
 
     return () => clearInterval(interval);
-  }, [currentJob, navigate, toast]);
+  }, [currentJob, supabase]);
+
+  useEffect(() => {
+    if (!currentJob || currentJob.status !== 'needs_review') {
+      return;
+    }
+
+    if (activeReviewJobId === currentJob.id && reviewContext) {
+      return;
+    }
+
+    let isMounted = true;
+
+    const loadReviewContext = async () => {
+      const meta = currentJob.meta || {};
+      const fields = meta.fields || {};
+      const highlights = Array.isArray(meta.highlights) ? meta.highlights : [];
+      const imageUrl = await resolveStorageUrl(supabase, meta.imageUrl || meta.image_url || null, 3600);
+
+      if (!isMounted) return;
+
+      setReviewContext({
+        imageUrl: imageUrl ?? '',
+        highlights: highlights.map((highlight: any) => ({
+          x: typeof highlight.x === 'number' ? highlight.x : Number(highlight.x ?? 0),
+          y: typeof highlight.y === 'number' ? highlight.y : Number(highlight.y ?? 0),
+          w: typeof highlight.w === 'number' ? highlight.w : Number(highlight.w ?? 0),
+          h: typeof highlight.h === 'number' ? highlight.h : Number(highlight.h ?? 0),
+          label: highlight.label ?? '',
+        })),
+        fields: {
+          gross: fields.gross ?? null,
+          net: fields.net ?? null,
+          tax_income: fields.tax_income ?? null,
+          ni_prsi: fields.ni_prsi ?? null,
+          pension_employee: fields.pension_employee ?? null,
+        },
+        confidence: typeof meta.confidence === 'number' ? meta.confidence : 0,
+        reviewRequired: meta.reviewRequired ?? true,
+        currency: fields.currency ?? meta.currency ?? 'GBP',
+      });
+      setActiveReviewJobId(currentJob.id);
+      setReviewDrawerOpen(true);
+    };
+
+    loadReviewContext();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentJob, supabase, activeReviewJobId, reviewContext]);
+
+  useEffect(() => {
+    if (!currentJob || handledJobCompletion) {
+      return;
+    }
+
+    if (currentJob.status === 'done' && !reviewDrawerOpen) {
+      setHandledJobCompletion(true);
+      toast({
+        title: 'Processing complete',
+        description: 'Your payslip has been extracted successfully',
+      });
+      setTimeout(() => navigate('/dashboard'), 1500);
+    } else if (currentJob.status === 'failed') {
+      setHandledJobCompletion(true);
+      toast({
+        title: 'Processing failed',
+        description: currentJob.error || 'An error occurred during extraction',
+        variant: 'destructive',
+      });
+      setUploading(false);
+    }
+  }, [currentJob, handledJobCompletion, reviewDrawerOpen, toast, navigate]);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -143,6 +219,86 @@ export default function Upload() {
     handleUpload(password);
   };
 
+  const handleReviewConfirm = async (finalFields: ReviewFields) => {
+    if (!currentJob || !user) {
+      throw new Error('No active review job.');
+    }
+
+    try {
+      const { data: payslipRow, error: payslipError } = await supabase
+        .from('payslips')
+        .select('id')
+        .eq('file_id', currentJob.file_id)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (payslipError || !payslipRow) {
+        throw payslipError || new Error('Payslip record not found for review.');
+      }
+
+      const confidenceValue =
+        reviewContext?.confidence ?? (typeof currentJob.meta?.confidence === 'number' ? currentJob.meta.confidence : null);
+
+      const { error: updatePayslipError } = await supabase
+        .from('payslips')
+        .update({
+          gross: finalFields.gross,
+          net: finalFields.net,
+          tax_income: finalFields.tax_income,
+          ni_prsi: finalFields.ni_prsi,
+          pension_employee: finalFields.pension_employee,
+          review_required: false,
+          confidence_overall: confidenceValue,
+        })
+        .eq('id', payslipRow.id);
+
+      if (updatePayslipError) {
+        throw updatePayslipError;
+      }
+
+      const updatedMeta = {
+        ...(currentJob.meta ?? {}),
+        fields: {
+          ...(currentJob.meta?.fields ?? {}),
+          ...finalFields,
+        },
+        reviewRequired: false,
+      };
+
+      const { error: updateJobError } = await supabase
+        .from('jobs')
+        .update({ status: 'done', meta: updatedMeta })
+        .eq('id', currentJob.id);
+
+      if (updateJobError) {
+        throw updateJobError;
+      }
+
+      setCurrentJob((prev) => (prev ? { ...prev, status: 'done', meta: updatedMeta } : prev));
+      setReviewContext((prev) => (prev ? { ...prev, fields: finalFields, reviewRequired: false } : prev));
+      setReviewDrawerOpen(false);
+      setHandledJobCompletion(true);
+      setActiveReviewJobId(null);
+
+      toast({
+        title: 'Review saved',
+        description: 'Your corrections have been applied successfully.',
+      });
+
+      navigate('/dashboard');
+    } catch (error: any) {
+      console.error('Failed to persist review', error);
+      toast({
+        title: 'Unable to save review',
+        description: error.message || 'An unexpected error occurred while saving your changes.',
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  };
+
   const handleUpload = async (pdfPassword?: string) => {
     if (!file || !user) return;
 
@@ -210,6 +366,10 @@ export default function Upload() {
       if (jobError) throw jobError;
 
       setCurrentJob(job as Job);
+      setHandledJobCompletion(false);
+      setReviewContext(null);
+      setActiveReviewJobId(null);
+      setReviewDrawerOpen(false);
 
       toast({
         title: 'Upload successful',
@@ -453,6 +613,22 @@ export default function Upload() {
           </Card>
         </div>
       </main>
+
+      <ReviewDrawer
+        open={reviewDrawerOpen && Boolean(reviewContext)}
+        imageUrl={reviewContext?.imageUrl ?? ''}
+        highlights={reviewContext?.highlights ?? []}
+        fields={reviewContext?.fields ?? emptyReviewFields}
+        confidence={reviewContext?.confidence ?? 0}
+        reviewRequired={reviewContext?.reviewRequired ?? true}
+        currency={reviewContext?.currency ?? 'GBP'}
+        onConfirm={handleReviewConfirm}
+        onCancel={() => {
+          if (!reviewContext?.reviewRequired) {
+            setReviewDrawerOpen(false);
+          }
+        }}
+      />
 
       <PasswordPromptModal
         open={showPasswordModal}
