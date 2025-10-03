@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Download, FileText, ExternalLink } from 'lucide-react';
+import { Download, FileText, ExternalLink, Loader2 } from 'lucide-react';
 import { formatMoney } from '@/lib/format';
 
 export interface DossierResponse {
@@ -43,6 +43,9 @@ interface DossierModalProps {
   data: DossierResponse | null;
   currency?: string;
   loading?: boolean;
+  pdfUrl?: string | null;
+  onGeneratePdf?: () => void;
+  pdfGenerating?: boolean;
 }
 
 export function DossierModal({
@@ -51,6 +54,9 @@ export function DossierModal({
   data,
   currency = 'GBP',
   loading = false,
+  pdfUrl = null,
+  onGeneratePdf,
+  pdfGenerating = false,
 }: DossierModalProps) {
   const [activeTab, setActiveTab] = useState('summary');
 
@@ -65,6 +71,36 @@ export function DossierModal({
           <DialogDescription>
             Your complete year-to-date financial summary and checklist
           </DialogDescription>
+          {(onGeneratePdf || pdfUrl) && (
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              {pdfUrl ? (
+                <Button variant="outline" size="sm" asChild>
+                  <a href={pdfUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2">
+                    <Download className="h-4 w-4" />
+                    Download PDF
+                  </a>
+                </Button>
+              ) : onGeneratePdf ? (
+                <Button size="sm" onClick={onGeneratePdf} disabled={pdfGenerating}>
+                  {pdfGenerating ? (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Generating…
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      <Download className="h-4 w-4" />
+                      Generate PDF
+                    </span>
+                  )}
+                </Button>
+              ) : (
+                <Button size="sm" variant="outline" disabled>
+                  PDF not available
+                </Button>
+              )}
+            </div>
+          )}
         </DialogHeader>
 
         {loading && (

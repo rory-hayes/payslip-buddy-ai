@@ -1,137 +1,286 @@
 # Key Remediation Diffs
 
-## Supabase client uses environment variables
+## Auto-open Review Drawer on Upload
 ```diff
--const SUPABASE_URL = "https://project.supabase.co";
--const SUPABASE_PUBLISHABLE_KEY = "<hard-coded anon key>";
--export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-+if (!supabaseUrl || !supabaseAnonKey) {
-+  throw new Error('Supabase environment variables are not set.');
++  const [handledJobCompletion, setHandledJobCompletion] = useState(false);
++  const [reviewDrawerOpen, setReviewDrawerOpen] = useState(false);
++  const [reviewContext, setReviewContext] = useState<ReviewContext | null>(null);
++  const [activeReviewJobId, setActiveReviewJobId] = useState<string | null>(null);
++
++  useEffect(() => {
++    if (!currentJob || currentJob.status !== 'needs_review') {
++      return;
++    }
++    if (activeReviewJobId === currentJob.id && reviewContext) {
++      return;
++    }
++    const imageUrl = await resolveStorageUrl(supabase, meta.imageUrl || meta.image_url || null, 3600);
++    setReviewContext({
++      imageUrl: imageUrl ?? '',
++      highlights: highlights.map(/* percent coords */),
++      fields: { gross: fields.gross ?? null, net: fields.net ?? null, /* ... */ },
++      confidence: typeof meta.confidence === 'number' ? meta.confidence : 0,
++      reviewRequired: meta.reviewRequired ?? true,
++      currency: fields.currency ?? meta.currency ?? 'GBP',
++    });
++    setActiveReviewJobId(currentJob.id);
++    setReviewDrawerOpen(true);
++  }, [currentJob, supabase, activeReviewJobId, reviewContext]);
++
++  const handleReviewConfirm = async (finalFields: ReviewFields) => {
++    const { data: payslipRow } = await supabase
++      .from('payslips')
++      .select('id')
++      .eq('file_id', currentJob.file_id)
++      .eq('user_id', user.id)
++      .order('created_at', { ascending: false })
++      .limit(1)
++      .single();
++    await supabase
++      .from('payslips')
++      .update({ ...finalFields, review_required: false, confidence_overall: confidenceValue })
++      .eq('id', payslipRow.id);
++    await supabase
++      .from('jobs')
++      .update({ status: 'done', meta: updatedMeta })
++      .eq('id', currentJob.id);
++    toast({ title: 'Review saved', description: 'Your corrections have been applied successfully.' });
++    navigate('/dashboard');
++  };
+```${F:src/pages/Upload.tsx†L20-L309}
+
+## Review Drawer Syncs with New Props
+```diff
+-import { useState } from 'react';
++import { useEffect, useState } from 'react';
+-import { formatMoney } from '@/lib/format';
+-
+-// NOTE: Highlight coordinates are PERCENT (0..100)
+-export interface Highlight { /* ... */ }
++import { formatMoney } from '@/lib/format';
++import type { Highlight, ReviewFields } from '@/types/review';
+ 
+ export interface ReviewDrawerProps {
+   open: boolean;
+   imageUrl: string;
+   highlights: Highlight[];
+-  fields: {
+-    gross: number | null;
+-    net: number | null;
+-    tax_income: number | null;
+-    ni_prsi: number | null;
+-    pension_employee: number | null;
+-  };
++  fields: ReviewFields;
+   confidence?: number;
+   reviewRequired: boolean;
+   currency?: string;
+   onConfirm: (finalFields: ReviewDrawerProps['fields']) => Promise<void>;
+   onCancel: () => void;
+ }
+ 
+ export function ReviewDrawer({ /* ... */ }: ReviewDrawerProps) {
+   const [fields, setFields] = useState(initialFields);
++  useEffect(() => {
++    setFields(initialFields);
++  }, [initialFields]);
+```${F:src/components/ReviewDrawer.tsx†L1-L69}
+
+## HR Pack + Review Banner in Payslip Detail
+```diff
++  const [hrJob, setHrJob] = useState<Job | null>(null);
++  const [hrGenerating, setHrGenerating] = useState(false);
++  const [hrDownloadUrl, setHrDownloadUrl] = useState<string | null>(null);
++  const [reviewDrawerOpen, setReviewDrawerOpen] = useState(false);
++  const [reviewContext, setReviewContext] = useState<ReviewContext | null>(null);
++  const [reviewJob, setReviewJob] = useState<Job | null>(null);
+ 
+-        <div className="flex gap-3">
+-          <Button disabled>
+-            Generate HR Pack (Coming Soon)
+-          </Button>
+-        </div>
++        {payslip.review_required && (
++          <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
++            <div>
++              <p className="font-semibold text-yellow-900">Review required</p>
++              <p className="text-sm text-yellow-800">Confirm the extracted values before this payslip is marked as complete.</p>
++            </div>
++            <Button variant="outline" onClick={() => setReviewDrawerOpen(true)} disabled={!reviewContext}>
++              Review now
++            </Button>
++          </div>
++        )}
++
++        <div className="space-y-2">
++          <div className="flex flex-wrap items-center gap-3">
++            <Button onClick={handleGenerateHrPack} disabled={hrGenerating || (hrJob && ['queued', 'running'].includes(hrJob.status))}>
++              {hrGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Generate HR Pack'}
++            </Button>
++            {hrDownloadUrl && (
++              <a href={hrDownloadUrl} target="_blank" rel="noreferrer" className="text-sm text-blue-600 underline hover:text-blue-800">
++                Download HR Pack
++              </a>
++            )}
++          </div>
++          {hrJob && ['queued', 'running'].includes(hrJob.status) && (
++            <p className="text-sm text-muted-foreground flex items-center gap-2">
++              <Loader2 className="h-4 w-4 animate-spin" />
++              Preparing your HR pack…
++            </p>
++          )}
++        </div>
++
++      <ReviewDrawer
++        open={reviewDrawerOpen && Boolean(reviewContext)}
++        imageUrl={reviewContext?.imageUrl ?? ''}
++        highlights={reviewContext?.highlights ?? []}
++        fields={reviewContext?.fields ?? emptyReviewFields}
++        confidence={reviewContext?.confidence ?? 0}
++        reviewRequired={reviewContext?.reviewRequired ?? Boolean(payslip.review_required)}
++        currency={reviewContext?.currency ?? payslip.currency ?? 'GBP'}
++        onConfirm={handleReviewConfirm}
++        onCancel={() => setReviewDrawerOpen(false)}
++      />
+```${F:src/pages/PayslipDetail.tsx†L19-L415}
+
+## Dossier Modal PDF Actions
+```diff
+-interface DossierModalProps {
+-  open: boolean;
+-  onClose: () => void;
+-  data: DossierResponse | null;
+-  currency?: string;
+-  loading?: boolean;
+-}
++interface DossierModalProps {
++  open: boolean;
++  onClose: () => void;
++  data: DossierResponse | null;
++  currency?: string;
++  loading?: boolean;
++  pdfUrl?: string | null;
++  onGeneratePdf?: () => void;
++  pdfGenerating?: boolean;
 +}
-+export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
-```【F:src/integrations/supabase/client.ts†L1-L22】
+ 
+-        <DialogHeader>
++        <DialogHeader>
+           <DialogTitle className="flex items-center gap-2">
+             <FileText className="h-5 w-5" />
+             Annual Dossier
+           </DialogTitle>
+           <DialogDescription>
+             Your complete year-to-date financial summary and checklist
+           </DialogDescription>
++          {(onGeneratePdf || pdfUrl) && (
++            <div className="mt-4 flex flex-wrap items-center gap-3">
++              {pdfUrl ? (
++                <Button variant="outline" size="sm" asChild>
++                  <a href={pdfUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2">
++                    <Download className="h-4 w-4" />
++                    Download PDF
++                  </a>
++                </Button>
++              ) : onGeneratePdf ? (
++                <Button size="sm" onClick={onGeneratePdf} disabled={pdfGenerating}>
++                  {pdfGenerating ? (
++                    <span className="flex items-center gap-2">
++                      <Loader2 className="h-4 w-4 animate-spin" />
++                      Generating…
++                    </span>
++                  ) : (
++                    <span className="flex items-center gap-2">
++                      <Download className="h-4 w-4" />
++                      Generate PDF
++                    </span>
++                  )}
++                </Button>
++              ) : (
++                <Button size="sm" variant="outline" disabled>
++                  PDF not available
++                </Button>
++              )}
++            </div>
++          )}
+         </DialogHeader>
+```${F:src/components/DossierModal.tsx†L40-L104}
 
-## Frontend runtime guard rails for Vercel
+## Dashboard Yearly Summary Trigger
 ```diff
-+import { ErrorBoundary } from "./components/ErrorBoundary";
-+import { EnvironmentGate } from "./components/EnvironmentGate";
++import { YearlySummaryTrigger } from '@/components/YearlySummaryTrigger';
+ 
+-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+-          <div>
+-            <h1 className="text-3xl font-bold">Dashboard</h1>
+-            <p className="text-muted-foreground mt-1">Your payslip overview and insights</p>
+-          </div>
+-          <Button asChild>
+-            <Link to="/upload">Upload Payslip</Link>
+-          </Button>
+-        </div>
++        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
++          <div>
++            <h1 className="text-3xl font-bold">Dashboard</h1>
++            <p className="text-muted-foreground mt-1">Your payslip overview and insights</p>
++          </div>
++          <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
++            <Button asChild>
++              <Link to="/upload">Upload Payslip</Link>
++            </Button>
++            <YearlySummaryTrigger className="sm:justify-end" />
++          </div>
++        </div>
+```${F:src/pages/Dashboard.tsx†L23-L70}
+
+```diff
++export function YearlySummaryTrigger({ className }: YearlySummaryTriggerProps) {
++  const supabase = getSupabaseClient();
++  const { toast } = useToast();
++  const { user, session } = useAuth();
++  const [selectedYear, setSelectedYear] = useState(currentYear.toString());
++  const [modalOpen, setModalOpen] = useState(false);
++  const [dossierData, setDossierData] = useState<DossierResponse | null>(null);
++  const [loading, setLoading] = useState(false);
++  const [pdfGenerating, setPdfGenerating] = useState(false);
++  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
++  const [dossierJob, setDossierJob] = useState<Job | null>(null);
 +
-+createRoot(rootElement).render(
-+  <StrictMode>
-+    <ErrorBoundary>
-+      <EnvironmentGate>
-+        <App />
-+      </EnvironmentGate>
-+    </ErrorBoundary>
-+  </StrictMode>,
-+);
-```
-Lazy-loaded status probe surfaces Supabase outages and env gate halts rendering when Vercel variables are missing.【F:src/main.tsx†L1-L24】【F:src/components/EnvironmentGate.tsx†L1-L57】【F:src/components/SupabaseStatusProbe.tsx†L1-L60】
-
-## Internal job detail authentication
-```diff
--@app.get("/internal/jobs/{job_id}")
--async def get_job(job_id: str, request: Request) -> Dict[str, Any]:
--    internal_header = request.headers.get("X-Internal-Token")
--    if internal_header:
--        require_internal_token(request)
-+@app.get("/internal/jobs/{job_id}")
-+async def get_job(
-+    job_id: str,
-+    _: Optional[AuthenticatedUser] = Depends(get_current_or_internal),
-+) -> Dict[str, Any]:
-     supabase = get_supabase()
-     job = supabase.table_select_single("jobs", match={"id": job_id})
-```
-OpenAPI adds `internalToken`/`bearerAuth` security with 401/403 responses.【F:apps/api/main.py†L63-L72】【F:openapi/api.yaml†L68-L93】
-
-## Export ZIP includes PDFs and CSVs
-```diff
--        archive.writestr("payslips.json", json.dumps(payslips, indent=2, default=str))
--        archive.writestr("anomalies.json", json.dumps(anomalies, indent=2, default=str))
--        archive.writestr("settings.json", json.dumps(settings, indent=2, default=str))
--        for file_row in files:
--            key = file_row.get("s3_key_original") or file_row.get("storage_path")
--            if not key:
--                continue
--            archive.writestr(f"pdfs/{Path(key).name}", "")
-+        archive.writestr("payslips.json", json.dumps(payslips, indent=2, default=str))
-+        archive.writestr("anomalies.json", json.dumps(anomalies, indent=2, default=str))
-+        archive.writestr("settings.json", json.dumps(settings, indent=2, default=str))
-+        archive.writestr("payslips.csv", _dicts_to_csv(payslips))
-+        archive.writestr("files.csv", _dicts_to_csv(files))
-+        archive.writestr("anomalies.csv", _dicts_to_csv(anomalies))
-+        archive.writestr("settings.csv", _dicts_to_csv([settings] if settings else []))
-+        for file_row in files:
-+            file_id = file_row.get("id")
-+            if not file_id:
-+                continue
-+            pdf_object = storage_service.download_pdf(user_id=user_id, file_id=str(file_id))
-+            archive.writestr(f"pdfs/{file_id}.pdf", pdf_object.bytes)
-```${F:apps/worker/services/reports.py†L132-L161】
-
-## HR pack embeds redacted preview
-```diff
--def generate_hr_pack_pdf(user_id: str, payload: Dict[str, Any]) -> ReportArtifact:
--    html = _render_html("HR Summary Pack", payload)
-+def generate_hr_pack_pdf(user_id: str, payload: Dict[str, Any]) -> ReportArtifact:
-+    preview = payload.get("redacted_preview") if isinstance(payload, dict) else None
-+    rendered_payload = json.loads(json.dumps(payload)) if isinstance(payload, dict) else payload
-+    if isinstance(rendered_payload, dict) and preview:
-+        preview_copy = dict(preview)
-+        preview_copy.pop("image_data", None)
-+        rendered_payload["redacted_preview"] = preview_copy
-+    html = _render_html("HR Summary Pack", rendered_payload, preview=preview)
-```
-Worker fetches the latest redacted PNG, signs it, and attaches base64 data before PDF generation.【F:apps/worker/tasks.py†L443-L487】
-
-## Supabase types updated for redactions.user_id
-```diff
-       redactions: {
-         Row: {
-           boxes: Json
-           created_at: string | null
-           file_id: string
-           id: string
-+          user_id: string
-         }
-         Insert: {
-           boxes: Json
-           created_at?: string | null
-           file_id: string
-           id?: string
-+          user_id: string
-         }
-         Update: {
-           boxes?: Json
-           created_at?: string | null
-           file_id?: string
-           id?: string
-+          user_id?: string
-         }
-```${F:src/integrations/supabase/types.ts†L332-L354}
-
-## Supabase secret guard script
-```diff
-+PATTERN='(<SUPABASE_URL_REGEX>|<JWT_PREFIX_REGEX>)'
++  const handleViewSummary = async () => {
++    const response = await fetch(`/dossier/preview?year=${selectedYear}`, {
++      headers: { Authorization: `Bearer ${session.access_token}` },
++    });
++    const payload = (await response.json()) as DossierResponse;
++    setDossierData(payload);
++    setModalOpen(true);
++  };
 +
-+violations=()
-+while IFS= read -r file; do
-+  if grep -nE "$PATTERN" "$file" >/tmp/grep_out.$$; then
-+    while IFS= read -r line; do
-+      violations+=("$file:$line")
-+    done < /tmp/grep_out.$$
-+  fi
-+done < <(git ls-files | grep -Ev '(^scripts/ci/check_supabase_keys\.sh$|node_modules/|\.env|\.cache)')
-+rm -f /tmp/grep_out.$$ || true
++  const handleGeneratePdf = async () => {
++    const { data } = await supabase
++      .from('jobs')
++      .insert({ user_id: user.id, kind: 'dossier', status: 'queued', meta: { year: Number(selectedYear) } })
++      .select()
++      .single();
++    setDossierJob(data as Job);
++  };
 +
-+if ((${#violations[@]})); then
-+  printf 'Supabase secret guard failed. Remove hard-coded URLs or keys:\n' >&2
-+  printf '  %s\n' "${violations[@]}" >&2
-+  exit 1
-+fi
-+
-+echo "Supabase secret guard passed."
-```【F:scripts/ci/check_supabase_keys.sh†L1-L22】
++  return (
++    <div className="space-y-2">
++      <div className={containerClass}>
++        <Select value={selectedYear} onValueChange={setSelectedYear}>/* ... */</Select>
++        <Button onClick={handleViewSummary} disabled={loading}>View summary</Button>
++        {pdfUrl && <a href={pdfUrl} target="_blank" rel="noreferrer">Download PDF</a>}
++      </div>
++      <DossierModal
++        open={modalOpen}
++        onClose={() => setModalOpen(false)}
++        data={dossierData}
++        loading={loading}
++        pdfUrl={pdfUrl}
++        onGeneratePdf={handleGeneratePdf}
++        pdfGenerating={pdfGenerating}
++      />
++    </div>
++  );
++}
+```${F:src/components/YearlySummaryTrigger.tsx†L16-L268}

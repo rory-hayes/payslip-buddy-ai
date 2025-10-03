@@ -132,6 +132,32 @@ def test_end_to_end_pipeline(monkeypatch, fake_supabase, fake_storage, fixture_s
     autoparse_rate = autoparse / len(fixtures)
     assert autoparse_rate >= 0.85, f"autoparse={autoparse_rate:.2f}, statuses={status_map}"
 
+    # Simulate a low-confidence run that requires manual review and ensure metadata is available
+    review_job = fake_supabase.insert_row(
+        "jobs",
+        {
+            "user_id": user_id,
+            "file_id": "uk_text",
+            "kind": JobKind.EXTRACT.value,
+            "status": JobStatus.QUEUED.value,
+            "meta": {},
+        },
+    )
+    monkeypatch.setattr("apps.worker.tasks.calculate_confidence", lambda *args, **kwargs: 0.4)
+    job_extract(review_job["id"])
+    review_row = fake_supabase.table_select_single("jobs", match={"id": review_job["id"]})
+    assert review_row["status"] == JobStatus.NEEDS_REVIEW.value
+    meta = review_row.get("meta") or {}
+    assert meta.get("reviewRequired") is True
+    assert meta.get("imageUrl")
+    assert isinstance(meta.get("highlights"), list)
+    fake_supabase.update_row(
+        "payslips", match={"file_id": review_job["file_id"]}, updates={"review_required": False}
+    )
+    fake_supabase.update_row(
+        "jobs", match={"id": review_job["id"]}, updates={"status": JobStatus.DONE.value}
+    )
+
     for name, args in send_calls:
         assert name == "jobs.detect_anomalies"
         follow_up_id = args[0]
@@ -191,6 +217,7 @@ def test_end_to_end_pipeline(monkeypatch, fake_supabase, fake_storage, fixture_s
     assert any(path.endswith("_redacted.png") for path in fake_storage.uploads)
     assert any(path.endswith("dossier.pdf") for path in fake_storage.uploads)
     assert any(path.endswith("export.zip") for path in fake_storage.uploads)
+    assert any(path.endswith("hr_pack.pdf") for path in fake_storage.uploads)
 
     identity_rate = identity_pass / len(fixtures)
     anomaly_counts: dict[str, int] = {}
