@@ -1,4 +1,4 @@
-# On Render build, run: pip install -r requirements.txt -c ../../constraints.txt --prefer-binary
+# On Render, build with: pip install --upgrade pip && pip install --prefer-binary -r requirements.txt -c ../../constraints.txt
 fastapi==0.111.0
 uvicorn[standard]==0.29.0
 python-dotenv==1.0.1

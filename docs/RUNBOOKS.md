@@ -1,9 +1,12 @@
 # Payslip Companion Runbooks
 
 ## Render deploy checklist
-1. Set environment variables for both API and worker services: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`, `REDIS_URL`, `INTERNAL_TOKEN`, and optionally `OPENAI_API_KEY`.
-2. After deploy, hit `/healthz` and expect `{"supabase":"ok","redis":"ok"}`.
-3. Run `celery -A apps.worker.celery_app.celery_app inspect ping` and confirm workers respond with `OK`.
+1. Confirm both services advertise Python 3.12.3 via `apps/api/runtime.txt` and `apps/worker/runtime.txt` (Render also accepts `PYTHON_VERSION=3.12.3`).
+2. Build command must include `pip install --upgrade pip && pip install --prefer-binary -r requirements.txt -c ../../constraints.txt` so maturin/Cargo never runs on Render.
+3. Validate environment variables for API and worker: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET=payslips`, `REDIS_URL` (TLS form `rediss://default:<token>@<host>:6379`), `INTERNAL_TOKEN`, and optionally `OPENAI_API_KEY`.
+4. After deploy, hit `/healthz` and expect `{"supabase":"ok","redis":"ok"}`.
+5. Run `celery -A apps.worker.celery_app.celery_app inspect ping` and confirm workers respond with `OK`.
+6. Upload a PDF (or run the internal trigger) and watch the job progress queued → running → done/needs_review in Supabase.
 
 ## Secrets Hygiene & Supabase Keys
 1. The Supabase anon key checked into earlier commits has been rotated. Never hard-code project URLs or keys; configure them via `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in the web `.env` file (see `apps/web/.env.sample`).
