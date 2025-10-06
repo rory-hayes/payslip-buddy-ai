@@ -8,9 +8,10 @@
 - Extended unit, regression, snapshot, and end-to-end tests covering validations, anomalies, history generation, OCR fixtures, and PDF rendering.
 
 ## Render deploy guardrails (Oct 2024)
-- Python 3.12 is enforced on Render via `apps/api/runtime.txt` and `apps/worker/runtime.txt`; keep both files in sync with the desired patch release.
-- Render builds should install dependencies with wheel-friendly constraints: `pip install -r apps/worker/requirements.txt -c constraints.txt --prefer-binary` (same for API service).
-- Verify locally by creating a Python 3.12 virtualenv: `python -m venv .venv && source .venv/bin/activate`, check `python --version`, then run `pip install -r apps/worker/requirements.txt -c constraints.txt --prefer-binary`; the resolver should download wheels with no `maturin` compilation output.
+- Python 3.12 is enforced on Render via `apps/api/runtime.txt` and `apps/worker/runtime.txt`; keep both files in sync with the desired patch release (currently 3.12.3).
+- Render builds should run `pip install --upgrade pip && pip install --prefer-binary -r requirements.txt -c ../../constraints.txt` so wheels for orjson/pydantic-core/PyMuPDF are downloaded instead of compiling via maturin.
+- Verify locally by creating a Python 3.12 virtualenv: `python -m venv .venv && source .venv/bin/activate`, check `python --version`, then run `pip install --prefer-binary -r apps/worker/requirements.txt -c constraints.txt`; the resolver should download wheels with no `maturin` compilation output.
+- Post-deploy checklist: `GET /healthz` should return `{"supabase":"ok","redis":"ok"}`, `celery -A apps.worker.celery_app.celery_app inspect ping` reports `OK`, and a sample PDF job moves queued → running → done/needs_review.
 
 ## Local Development
 1. Copy `apps/api/.env.sample` to `apps/api/.env` (or set environment variables) and populate Supabase, Redis, and OpenAI credentials.

@@ -83,8 +83,17 @@ The anon key shipped in previous revisions has been revoked; production and prev
 
 ## Render deployment
 
-- Python 3.12 runtimes are pinned via `apps/api/runtime.txt` and `apps/worker/runtime.txt`.
-- Configure `REDIS_URL` with your Render Redis instance in TLS form, e.g. `rediss://default:<token>@<host>:6379`.
+- Python 3.12 is enforced by `apps/api/runtime.txt` and `apps/worker/runtime.txt`; keep both files on the same patch version (currently `3.12.3`).
+- Recommended build command for both the web service and worker: `pip install --upgrade pip && pip install --prefer-binary -r requirements.txt -c ../../constraints.txt`.
+- Required environment variables:
+  - `SUPABASE_URL`
+  - `SUPABASE_SERVICE_ROLE_KEY`
+  - `SUPABASE_STORAGE_BUCKET=payslips`
+  - `REDIS_URL=rediss://default:<token>@<host>:6379`
+  - `OPENAI_API_KEY` (optional for LLM features)
+  - `INTERNAL_TOKEN`
+- Health check: `GET /healthz` returns `{"supabase":"ok","redis":"ok"}` when Supabase and Redis connectivity are healthy.
+- Troubleshooting: maturin/Cargo build failures indicate Render is not using Python 3.12 or `--prefer-binary`; redeploy after correcting the runtime and build command.
 - Example worker start command: `celery -A apps.worker.celery_app worker --loglevel=INFO --concurrency=2`.
 
 ## CI safety checks
