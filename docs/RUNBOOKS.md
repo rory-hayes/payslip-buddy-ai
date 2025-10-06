@@ -1,5 +1,10 @@
 # Payslip Companion Runbooks
 
+## Render deploy checklist
+1. Set environment variables for both API and worker services: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`, `REDIS_URL`, `INTERNAL_TOKEN`, and optionally `OPENAI_API_KEY`.
+2. After deploy, hit `/healthz` and expect `{"supabase":"ok","redis":"ok"}`.
+3. Run `celery -A apps.worker.celery_app.celery_app inspect ping` and confirm workers respond with `OK`.
+
 ## Secrets Hygiene & Supabase Keys
 1. The Supabase anon key checked into earlier commits has been rotated. Never hard-code project URLs or keys; configure them via `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in the web `.env` file (see `apps/web/.env.sample`).
 2. Run `npm run ci:verify` locally or in CI. The chained script (`scripts/ci/check_audit_green.sh` + `scripts/ci/check_supabase_keys.sh`) confirms `AUDIT.md` still reports Green and scans tracked files for common Supabase tokens, failing fast if issues are detected.

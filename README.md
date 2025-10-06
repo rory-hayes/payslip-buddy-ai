@@ -81,6 +81,12 @@ Copy `apps/web/.env.sample` to `.env` (or `.env.local`) before running the web a
 
 The anon key shipped in previous revisions has been revoked; production and preview builds must load credentials from environment variables.
 
+## Render deployment
+
+- Python 3.12 runtimes are pinned via `apps/api/runtime.txt` and `apps/worker/runtime.txt`.
+- Configure `REDIS_URL` with your Render Redis instance in TLS form, e.g. `rediss://default:<token>@<host>:6379`.
+- Example worker start command: `celery -A apps.worker.celery_app worker --loglevel=INFO --concurrency=2`.
+
 ## CI safety checks
 
 Run `npm run ci:verify` locally (and in CI) to confirm `AUDIT.md` remains GREEN and to block hard-coded Supabase URLs or anon keys from landing in the repository. The script chains the audit guard and the Supabase secret scan so deploys fail fast when compliance drifts.
