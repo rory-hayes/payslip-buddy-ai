@@ -1,0 +1,4 @@
+# Render-friendly wheels for Python 3.12
+orjson>=3.9
+pydantic==2.7.1
+pydantic-core==2.18.2

@@ -1,3 +1,4 @@
+# On Render build, run: pip install -r requirements.txt -c ../../constraints.txt --prefer-binary
 celery==5.3.6
 redis==5.0.4
 supabase==2.3.4
