@@ -81,20 +81,38 @@ Copy `apps/web/.env.sample` to `.env` (or `.env.local`) before running the web a
 
 The anon key shipped in previous revisions has been revoked; production and preview builds must load credentials from environment variables.
 
-## Render deployment
+## Render Deploy
 
-- Python 3.12 is enforced by `apps/api/runtime.txt` and `apps/worker/runtime.txt`; keep both files on the same patch version (currently `3.12.3`).
-- Recommended build command for both the web service and worker: `pip install --upgrade pip && pip install --prefer-binary -r requirements.txt -c ../../constraints.txt`.
-- Required environment variables:
-  - `SUPABASE_URL`
-  - `SUPABASE_SERVICE_ROLE_KEY`
-  - `SUPABASE_STORAGE_BUCKET=payslips`
-  - `REDIS_URL=rediss://default:<token>@<host>:6379`
-  - `OPENAI_API_KEY` (optional for LLM features)
-  - `INTERNAL_TOKEN`
-- Health check: `GET /healthz` returns `{"supabase":"ok","redis":"ok"}` when Supabase and Redis connectivity are healthy.
-- Troubleshooting: maturin/Cargo build failures indicate Render is not using Python 3.12 or `--prefer-binary`; redeploy after correcting the runtime and build command.
-- Example worker start command: `celery -A apps.worker.celery_app worker --loglevel=INFO --concurrency=2`.
+**Environment**
+
+- `PYTHON_VERSION=3.12.3`
+- `SUPABASE_URL=...`
+- `SUPABASE_SERVICE_ROLE_KEY=...`
+- `SUPABASE_STORAGE_BUCKET=payslips`
+- `REDIS_URL=rediss://default:<token>@<host>:6379`
+- `INTERNAL_TOKEN=<long random string>`
+- `OPENAI_API_KEY=<optional, no trailing dot>`
+- `LOG_LEVEL=INFO`
+
+**Build Command (API & Worker services)**
+
+```
+pip install --upgrade pip && pip install --prefer-binary -r requirements.txt -c ../constraints.txt
+```
+
+**Start Command**
+
+- Web: `uvicorn apps.api.main:app --host 0.0.0.0 --port 8000`
+- Worker: `celery -A apps.worker.celery_app worker --loglevel=INFO --concurrency=2`
+
+**Health**
+
+- `/healthz` must return `{"supabase":"ok","redis":"ok"}`.
+
+**Troubleshooting**
+
+- If builds mention maturin/Cargo/Pillow sdist, confirm Python 3.12.3 is selected and that `--prefer-binary` with `-c ../constraints.txt` is applied.
+- Ensure `httpx==0.25.2` stays aligned with `supabase==2.3.4` so the resolver never pulls incompatible transports.
 
 ## CI safety checks
 

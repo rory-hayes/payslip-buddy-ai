@@ -1,6 +1,7 @@
 # Codex Build Log — Payslip Companion Backend
 
 ## Summary
+- Apr 2025 alignment: locked API/worker to Python 3.12.3 via `runtime.txt`, pinned `httpx==0.25.2` alongside `supabase==2.3.4`, refreshed wheel-friendly `constraints.txt`, and documented Render deploy/build steps (`--prefer-binary`, `-c ../constraints.txt`). Verify by running the Render build command locally and confirming `/healthz` reports `{"supabase":"ok","redis":"ok"}` after deploy.
 - Implemented OCR fallback with Tesseract, confidence heuristics, and validation gates; golden fixtures autoparse 6/6 (100%).
 - Delivered Celery worker pipeline with antivirus scan, PDF parsing/redaction, native/OCR merge, anomaly detection, dossier/export/delete flows, and retention cron.
 - Added storage helpers, LLM client, redaction heuristics, cleanup utilities, report generators, and regression harness aligning with PRD contracts.
@@ -9,8 +10,8 @@
 
 ## Render deploy guardrails (Oct 2024)
 - Python 3.12 is enforced on Render via `apps/api/runtime.txt` and `apps/worker/runtime.txt`; keep both files in sync with the desired patch release (currently 3.12.3).
-- Render builds should run `pip install --upgrade pip && pip install --prefer-binary -r requirements.txt -c ../../constraints.txt` so wheels for orjson/pydantic-core/PyMuPDF are downloaded instead of compiling via maturin.
-- Verify locally by creating a Python 3.12 virtualenv: `python -m venv .venv && source .venv/bin/activate`, check `python --version`, then run `pip install --prefer-binary -r apps/worker/requirements.txt -c constraints.txt`; the resolver should download wheels with no `maturin` compilation output.
+- Render builds should run `pip install --upgrade pip && pip install --prefer-binary -r requirements.txt -c ../constraints.txt` so wheels for orjson/pydantic-core/PyMuPDF are downloaded instead of compiling via maturin.
+- Verify locally by creating a Python 3.12 virtualenv: `python -m venv .venv && source .venv/bin/activate`, check `python --version`, then run `pip install --prefer-binary -r apps/worker/requirements.txt -c constraints.txt`; the resolver should download wheels with no `maturin` compilation output while respecting the shared constraints file.
 - Post-deploy checklist: `GET /healthz` should return `{"supabase":"ok","redis":"ok"}`, `celery -A apps.worker.celery_app.celery_app inspect ping` reports `OK`, and a sample PDF job moves queued → running → done/needs_review.
 
 ## Local Development
