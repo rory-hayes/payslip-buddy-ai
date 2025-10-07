@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import requests
-from supabase.storage import StorageException
+from storage3 import StorageException
 
 from apps.common.config import get_settings
 from apps.common.supabase import get_supabase
@@ -64,7 +64,11 @@ class StorageService:
         path = self._build_path(user_id, name)
         LOGGER.info("Uploading artifact to storage", extra={"path": path, "content_type": content_type})
         file_obj = io.BytesIO(data)
-        self._supabase.storage.from_(self.bucket).upload(path, file_obj, {"upsert": True, "content-type": content_type})
+        self._supabase.storage.from_(self.bucket).upload(
+            path,
+            file_obj,
+            {"upsert": True, "contentType": content_type},
+        )
         return StorageObject(path=path, bytes=data, content_type=content_type)
 
     def fetch_signed_object(self, path: str, *, expires_in: int = 300) -> StorageObject:
