@@ -1,6 +1,7 @@
 # Codex Build Log — Payslip Companion Backend
 
 ## Summary
+- Jun 2025 storage hotfix: switched worker storage helper to `storage3.StorageException`, pinned `storage3>=0.7.6,<0.9` for API and worker, and verified bucket uploads still set `contentType`. Validate by running `pip install --prefer-binary -r apps/worker/requirements.txt -c constraints.txt` and executing a storage upload to confirm no `ModuleNotFoundError` and `StorageException` handling remains intact.
 - Apr 2025 alignment: locked API/worker to Python 3.12.3 via `runtime.txt`, pinned `httpx==0.25.2` alongside `supabase==2.3.4`, refreshed wheel-friendly `constraints.txt`, and documented Render deploy/build steps (`--prefer-binary`, `-c ../constraints.txt`). Verify by running the Render build command locally and confirming `/healthz` reports `{"supabase":"ok","redis":"ok"}` after deploy.
 - Implemented OCR fallback with Tesseract, confidence heuristics, and validation gates; golden fixtures autoparse 6/6 (100%).
 - Delivered Celery worker pipeline with antivirus scan, PDF parsing/redaction, native/OCR merge, anomaly detection, dossier/export/delete flows, and retention cron.

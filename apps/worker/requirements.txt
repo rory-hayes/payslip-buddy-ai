@@ -6,6 +6,7 @@ redis==5.0.4
 
 # Supabase client
 supabase==2.3.4
+storage3>=0.7.6,<0.9
 httpx==0.25.2
 
 # PDF/OCR stack
