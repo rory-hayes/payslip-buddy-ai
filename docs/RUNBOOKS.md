@@ -1,11 +1,11 @@
 # Payslip Companion Runbooks
 
 ## Render deploy checklist
-1. Confirm both services advertise Python 3.12.3 via `apps/api/runtime.txt` and `apps/worker/runtime.txt` (Render also accepts `PYTHON_VERSION=3.12.3`).
-2. Build command must include `pip install --upgrade pip && pip install --prefer-binary -r requirements.txt -c ../../constraints.txt` so maturin/Cargo never runs on Render.
-3. Validate environment variables for API and worker: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET=payslips`, `REDIS_URL` (TLS form `rediss://default:<token>@<host>:6379`), `INTERNAL_TOKEN`, and optionally `OPENAI_API_KEY`.
+1. First build line must show `Installing Python version 3.12.3.`
+2. Build command uses `pip install --upgrade pip && pip install --prefer-binary -r requirements.txt -c ../constraints.txt` so maturin/Cargo never runs on Render.
+3. Validate environment variables for API and worker: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET=payslips`, `REDIS_URL` (TLS form `rediss://default:<token>@<host>:6379`), `INTERNAL_TOKEN`, optionally `OPENAI_API_KEY`, and `LOG_LEVEL=INFO`.
 4. After deploy, hit `/healthz` and expect `{"supabase":"ok","redis":"ok"}`.
-5. Run `celery -A apps.worker.celery_app.celery_app inspect ping` and confirm workers respond with `OK`.
+5. Ensure worker start command `celery -A apps.worker.celery_app worker --loglevel=INFO --concurrency=2` connects to Redis (logs show `connected to redis://`).
 6. Upload a PDF (or run the internal trigger) and watch the job progress queued → running → done/needs_review in Supabase.
 
 ## Secrets Hygiene & Supabase Keys

@@ -1,11 +1,30 @@
-# On Render, build with: pip install --upgrade pip && pip install --prefer-binary -r requirements.txt -c ../../constraints.txt
+# On Render, build with: pip install --upgrade pip && pip install --prefer-binary -r requirements.txt -c ../constraints.txt
+
+# Core web/API
 fastapi==0.111.0
 uvicorn[standard]==0.29.0
-python-dotenv==1.0.1
+
+# Supabase client and its HTTP deps
 supabase==2.3.4
+httpx==0.25.2  # supabase<0.26 requires httpx<0.26
+
+# Pydantic (2.x) and core
+pydantic==2.7.1
+pydantic-core==2.18.2
+pydantic-settings==2.2.1
+
+# JSON libs with wheels for Py 3.12
+orjson==3.11.3
+ujson==5.11.0
+
+# FastAPI extras
+jinja2==3.1.6
+python-multipart==0.0.20
+email_validator==2.3.0
+annotated-types==0.7.0
+
+# Supporting libraries
+python-dotenv==1.0.1
 redis==5.0.4
 celery==5.3.6
-pydantic==2.7.1
-pydantic-settings==2.2.1
 python-jose==3.3.0
-httpx==0.27.0
