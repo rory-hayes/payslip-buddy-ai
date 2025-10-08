@@ -10,8 +10,9 @@ RUN apt-get update \
         clamav-freshclam \
     && rm -rf /var/lib/apt/lists/*
 
+COPY constraints.txt constraints.txt
 COPY apps/worker/requirements.txt requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
 COPY infra/dockerfiles/worker-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
