@@ -5,7 +5,8 @@ fastapi==0.111.0
 uvicorn[standard]==0.29.0
 
 # Supabase client and its HTTP deps
-supabase==2.3.4
+supabase==2.7.4
+gotrue==2.5.0
 storage3>=0.7.6,<0.9
 httpx==0.25.2  # supabase<0.26 requires httpx<0.26
 
