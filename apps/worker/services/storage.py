@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import requests
-from storage3 import StorageException
+from storage3.utils import StorageException
 
 from apps.common.config import get_settings
 from apps.common.supabase import get_supabase
