@@ -16,6 +16,7 @@ from apps.api.auth import (
 from apps.common.config import get_settings
 from apps.common.models import DossierChecklistItem, DossierMonth, DossierResponse, DossierTotals, JobKind, JobStatus
 from apps.common.supabase import get_supabase
+from apps.worker.celery_app import celery_app
 
 app = FastAPI(title="Payslip Companion API", version="1.0.0")
 
@@ -57,6 +58,10 @@ async def trigger_job(payload: TriggerJobPayload, request: Request) -> Dict[str,
             "meta": payload.meta,
         },
     )
+    job_id = job.get("id")
+    if job_id is None:  # pragma: no cover - defensive guard
+        raise HTTPException(status_code=500, detail="Failed to enqueue job")
+    celery_app.send_task(f"jobs.{payload.kind.value}", args=[job_id])
     return job
 
 
