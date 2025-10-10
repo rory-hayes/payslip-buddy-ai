@@ -13,12 +13,15 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Loader2, Trash2, Download } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 
+const getErrorMessage = (error: unknown, fallback: string): string =>
+  error instanceof Error ? error.message : fallback;
+
 export default function Settings() {
   const supabase = getSupabaseClient();
   const [settings, setSettings] = useState<SettingsType | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const { toast } = useToast();
 
   // Poll for active and recent jobs
@@ -51,7 +54,14 @@ export default function Settings() {
   }, [user]);
 
   const loadSettings = async () => {
-    if (!user) return;
+    if (!user || !session) {
+      toast({
+        title: 'Authentication required',
+        description: 'Please sign in again to manage your data.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     try {
       const { data, error } = await supabase
@@ -62,10 +72,10 @@ export default function Settings() {
 
       if (error) throw error;
       setSettings(data as SettingsType);
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: 'Error loading settings',
-        description: error.message,
+        description: getErrorMessage(error, 'Failed to load your settings.'),
         variant: 'destructive',
       });
     } finally {
@@ -93,10 +103,10 @@ export default function Settings() {
         title: 'Settings saved',
         description: 'Your preferences have been updated',
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: 'Error saving settings',
-        description: error.message,
+        description: getErrorMessage(error, 'Failed to save your settings.'),
         variant: 'destructive',
       });
     } finally {
@@ -113,16 +123,27 @@ export default function Settings() {
     if (!confirmed) return;
 
     try {
-      const { error } = await supabase
-        .from('jobs')
-        .insert({
-          user_id: user.id,
-          kind: 'delete_all',
-          status: 'queued',
-          meta: {},
-        });
+      const response = await fetch('/jobs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ kind: 'delete_all' }),
+      });
 
-      if (error) throw error;
+      const payload: unknown = await response.json().catch(() => null);
+
+      if (!response.ok || !payload) {
+        let detail = `Failed to enqueue job (status ${response.status})`;
+        if (payload && typeof payload === 'object' && 'detail' in payload) {
+          const maybeDetail = (payload as { detail?: unknown }).detail;
+          if (typeof maybeDetail === 'string') {
+            detail = maybeDetail;
+          }
+        }
+        throw new Error(detail);
+      }
 
       toast({
         title: 'Deletion queued',
@@ -130,29 +151,47 @@ export default function Settings() {
       });
 
       refetchJobs();
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: 'Error',
-        description: error.message,
+        description: getErrorMessage(error, 'Failed to queue deletion job.'),
         variant: 'destructive',
       });
     }
   };
 
   const handleExportAll = async () => {
-    if (!user) return;
+    if (!user || !session) {
+      toast({
+        title: 'Authentication required',
+        description: 'Please sign in again to manage your data.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     try {
-      const { error } = await supabase
-        .from('jobs')
-        .insert({
-          user_id: user.id,
-          kind: 'export_all',
-          status: 'queued',
-          meta: {},
-        });
+      const response = await fetch('/jobs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ kind: 'export_all' }),
+      });
 
-      if (error) throw error;
+      const payload: unknown = await response.json().catch(() => null);
+
+      if (!response.ok || !payload) {
+        let detail = `Failed to enqueue job (status ${response.status})`;
+        if (payload && typeof payload === 'object' && 'detail' in payload) {
+          const maybeDetail = (payload as { detail?: unknown }).detail;
+          if (typeof maybeDetail === 'string') {
+            detail = maybeDetail;
+          }
+        }
+        throw new Error(detail);
+      }
 
       toast({
         title: 'Export queued',
@@ -160,10 +199,10 @@ export default function Settings() {
       });
 
       refetchJobs();
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: 'Error',
-        description: error.message,
+        description: getErrorMessage(error, 'Failed to queue export job.'),
         variant: 'destructive',
       });
     }

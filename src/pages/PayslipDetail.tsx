@@ -20,7 +20,7 @@ export default function PayslipDetail() {
   const supabase = getSupabaseClient();
   const { id } = useParams();
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const [hrJob, setHrJob] = useState<Job | null>(null);
   const [hrGenerating, setHrGenerating] = useState(false);
   const [hrDownloadUrl, setHrDownloadUrl] = useState<string | null>(null);
@@ -34,6 +34,14 @@ export default function PayslipDetail() {
     tax_income: null,
     ni_prsi: null,
     pension_employee: null,
+  };
+
+  type RawHighlight = {
+    x?: number | string | null;
+    y?: number | string | null;
+    w?: number | string | null;
+    h?: number | string | null;
+    label?: string | null;
   };
 
   const { data: payslip, isLoading, refetch } = useQuery({
@@ -60,7 +68,16 @@ export default function PayslipDetail() {
   };
 
   const handleGenerateHrPack = async () => {
-    if (!payslip || !user) return;
+    if (!payslip || !user || !session) {
+      if (!session) {
+        toast({
+          title: 'Authentication required',
+          description: 'Please sign in again to request an HR pack.',
+          variant: 'destructive',
+        });
+      }
+      return;
+    }
 
     if (hrGenerating || (hrJob && ['queued', 'running'].includes(hrJob.status))) {
       return;
@@ -70,33 +87,45 @@ export default function PayslipDetail() {
     setHrDownloadUrl(null);
 
     try {
-      const { data, error } = await supabase
-        .from('jobs')
-        .insert({
-          user_id: user.id,
-          file_id: payslip.file_id,
+      const response = await fetch('/jobs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
           kind: 'hr_pack',
-          status: 'queued',
-          meta: {},
-        })
-        .select()
-        .single();
+          file_id: payslip.file_id,
+        }),
+      });
 
-      if (error || !data) {
-        throw error || new Error('Failed to enqueue HR pack job');
+      const payload: unknown = await response.json().catch(() => null);
+
+      if (!response.ok || !payload) {
+        let detail = `Failed to enqueue job (status ${response.status})`;
+        if (payload && typeof payload === 'object' && 'detail' in payload) {
+          const maybeDetail = (payload as { detail?: unknown }).detail;
+          if (typeof maybeDetail === 'string') {
+            detail = maybeDetail;
+          }
+        }
+        throw new Error(detail);
       }
 
-      setHrJob(data as Job);
+      setHrJob(payload as Job);
       toast({
         title: 'HR pack requested',
         description: 'We will notify you when the HR pack is ready.',
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to enqueue HR pack', error);
       setHrGenerating(false);
       toast({
         title: 'Unable to generate HR pack',
-        description: error.message || 'An unexpected error occurred while creating the HR pack.',
+        description:
+          error instanceof Error
+            ? error.message
+            : 'An unexpected error occurred while creating the HR pack.',
         variant: 'destructive',
       });
     }
@@ -156,11 +185,13 @@ export default function PayslipDetail() {
       });
 
       await refetch();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to persist review corrections', error);
+      const message =
+        error instanceof Error ? error.message : 'An unexpected error occurred.';
       toast({
         title: 'Unable to save review',
-        description: error.message || 'An unexpected error occurred.',
+        description: message,
         variant: 'destructive',
       });
       throw error;
@@ -296,12 +327,12 @@ export default function PayslipDetail() {
       setReviewJob(jobRecord);
       setReviewContext({
         imageUrl: signedImage ?? '',
-        highlights: highlights.map((highlight: any) => ({
+        highlights: highlights.map((highlight: RawHighlight) => ({
           x: typeof highlight.x === 'number' ? highlight.x : Number(highlight.x ?? 0),
           y: typeof highlight.y === 'number' ? highlight.y : Number(highlight.y ?? 0),
           w: typeof highlight.w === 'number' ? highlight.w : Number(highlight.w ?? 0),
           h: typeof highlight.h === 'number' ? highlight.h : Number(highlight.h ?? 0),
-          label: highlight.label ?? '',
+          label: typeof highlight.label === 'string' ? highlight.label : '',
         })),
         fields: {
           gross: fields.gross ?? null,

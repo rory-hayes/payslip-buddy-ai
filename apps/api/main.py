@@ -65,6 +65,37 @@ async def trigger_job(payload: TriggerJobPayload, request: Request) -> Dict[str,
     return job
 
 
+class UserJobPayload(BaseModel):
+    kind: JobKind
+    file_id: Optional[str] = None
+    meta: Dict[str, Any] = Field(default_factory=dict)
+
+
+@app.post("/jobs", status_code=202)
+async def create_user_job(
+    payload: UserJobPayload, user: AuthenticatedUser = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """Create a new job for the authenticated user and dispatch its Celery task."""
+
+    supabase = get_supabase()
+    job = supabase.insert_row(
+        "jobs",
+        {
+            "user_id": user.user_id,
+            "file_id": payload.file_id,
+            "kind": payload.kind.value,
+            "status": JobStatus.QUEUED.value,
+            "meta": payload.meta or {},
+        },
+    )
+    job_id = job.get("id")
+    if job_id is None:
+        raise HTTPException(status_code=500, detail="Failed to create job")
+
+    celery_app.send_task(f"jobs.{payload.kind.value}", args=[job_id])
+    return job
+
+
 @app.get("/internal/jobs/{job_id}")
 async def get_job(
     job_id: str,
