@@ -9,6 +9,9 @@ import { resolveStorageUrl } from '@/lib/storage';
 import type { Job } from '@/types/database';
 import { Loader2 } from 'lucide-react';
 
+const getErrorMessage = (error: unknown, fallback: string): string =>
+  error instanceof Error ? error.message : fallback;
+
 type YearlySummaryTriggerProps = {
   className?: string;
 };
@@ -163,11 +166,11 @@ export function YearlySummaryTrigger({ className }: YearlySummaryTriggerProps) {
       const payload = (await response.json()) as DossierResponse;
       setDossierData(payload);
       setModalOpen(true);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to load dossier preview', error);
       toast({
         title: 'Unable to load summary',
-        description: error.message || 'An unexpected error occurred.',
+        description: getErrorMessage(error, 'An unexpected error occurred.'),
         variant: 'destructive',
       });
     } finally {
@@ -176,38 +179,55 @@ export function YearlySummaryTrigger({ className }: YearlySummaryTriggerProps) {
   };
 
   const handleGeneratePdf = async () => {
-    if (!user) return;
+    if (!user || !session) {
+      toast({
+        title: 'Authentication required',
+        description: 'Please sign in again to request a dossier PDF.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     setPdfGenerating(true);
     setPdfUrl(null);
 
     try {
-      const { data, error } = await supabase
-        .from('jobs')
-        .insert({
-          user_id: user.id,
+      const response = await fetch('/jobs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
           kind: 'dossier',
-          status: 'queued',
           meta: { year: Number(selectedYear) },
-        })
-        .select()
-        .single();
+        }),
+      });
 
-      if (error || !data) {
-        throw error || new Error('Failed to enqueue dossier PDF job');
+      const payload: unknown = await response.json().catch(() => null);
+
+      if (!response.ok || !payload) {
+        let detail = `Failed to enqueue job (status ${response.status})`;
+        if (payload && typeof payload === 'object' && 'detail' in payload) {
+          const maybeDetail = (payload as { detail?: unknown }).detail;
+          if (typeof maybeDetail === 'string') {
+            detail = maybeDetail;
+          }
+        }
+        throw new Error(detail);
       }
 
-      setDossierJob(data as Job);
+      setDossierJob(payload as Job);
       toast({
         title: 'Dossier PDF requested',
         description: 'We will let you know when the PDF is ready to download.',
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to enqueue dossier PDF job', error);
       setPdfGenerating(false);
       toast({
         title: 'Unable to generate dossier PDF',
-        description: error.message || 'An unexpected error occurred.',
+        description: getErrorMessage(error, 'An unexpected error occurred.'),
         variant: 'destructive',
       });
     }

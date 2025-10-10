@@ -30,8 +30,16 @@ export default function Upload() {
   const [reviewContext, setReviewContext] = useState<ReviewContext | null>(null);
   const [activeReviewJobId, setActiveReviewJobId] = useState<string | null>(null);
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const navigate = useNavigate();
+
+  type RawHighlight = {
+    x?: number | string | null;
+    y?: number | string | null;
+    w?: number | string | null;
+    h?: number | string | null;
+    label?: string | null;
+  };
 
   const emptyReviewFields: ReviewFields = {
     gross: null,
@@ -86,12 +94,12 @@ export default function Upload() {
 
       setReviewContext({
         imageUrl: imageUrl ?? '',
-        highlights: highlights.map((highlight: any) => ({
+        highlights: highlights.map((highlight: RawHighlight) => ({
           x: typeof highlight.x === 'number' ? highlight.x : Number(highlight.x ?? 0),
           y: typeof highlight.y === 'number' ? highlight.y : Number(highlight.y ?? 0),
           w: typeof highlight.w === 'number' ? highlight.w : Number(highlight.w ?? 0),
           h: typeof highlight.h === 'number' ? highlight.h : Number(highlight.h ?? 0),
-          label: highlight.label ?? '',
+          label: typeof highlight.label === 'string' ? highlight.label : '',
         })),
         fields: {
           gross: fields.gross ?? null,
@@ -288,11 +296,15 @@ export default function Upload() {
       });
 
       navigate('/dashboard');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to persist review', error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'An unexpected error occurred while saving your changes.';
       toast({
         title: 'Unable to save review',
-        description: error.message || 'An unexpected error occurred while saving your changes.',
+        description: message,
         variant: 'destructive',
       });
       throw error;
@@ -301,6 +313,14 @@ export default function Upload() {
 
   const handleUpload = async (pdfPassword?: string) => {
     if (!file || !user) return;
+    if (!session) {
+      toast({
+        title: 'Authentication required',
+        description: 'Please sign in again to continue.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     setUploading(true);
 
@@ -351,21 +371,33 @@ export default function Upload() {
       if (fileError) throw fileError;
 
       // Enqueue extraction job
-      const { data: job, error: jobError } = await supabase
-        .from('jobs')
-        .insert({
-          user_id: user.id,
-          file_id: fileRecord.id,
+      const response = await fetch('/jobs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
           kind: 'extract',
-          status: 'queued',
+          file_id: fileRecord.id,
           meta: pdfPassword ? { pdfPassword } : {},
-        })
-        .select()
-        .single();
+        }),
+      });
 
-      if (jobError) throw jobError;
+      const payload: unknown = await response.json().catch(() => null);
 
-      setCurrentJob(job as Job);
+      if (!response.ok || !payload) {
+        let detail = `Failed to enqueue job (status ${response.status})`;
+        if (payload && typeof payload === 'object' && 'detail' in payload) {
+          const maybeDetail = (payload as { detail?: unknown }).detail;
+          if (typeof maybeDetail === 'string') {
+            detail = maybeDetail;
+          }
+        }
+        throw new Error(detail);
+      }
+
+      setCurrentJob(payload as Job);
       setHandledJobCompletion(false);
       setReviewContext(null);
       setActiveReviewJobId(null);
@@ -375,10 +407,11 @@ export default function Upload() {
         title: 'Upload successful',
         description: 'Your payslip is being processed',
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'An unexpected error occurred during upload.';
       toast({
         title: 'Upload failed',
-        description: error.message,
+        description: message,
         variant: 'destructive',
       });
       setUploading(false);
