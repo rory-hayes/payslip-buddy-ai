@@ -72,7 +72,7 @@ class SpendCapExceeded(RuntimeError):
 
 
 class LlmVisionClient:
-    MODEL = "gpt-4o"
+    MODEL = "gpt-5"
 
     def __init__(self) -> None:
         settings = get_settings()
