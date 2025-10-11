@@ -16,6 +16,7 @@ import { Job } from '@/types/database';
 import { ReviewDrawer } from '@/components/ReviewDrawer';
 import type { ReviewContext, ReviewFields } from '@/types/review';
 import { resolveStorageUrl } from '@/lib/storage';
+import { invokeExtract } from '@/lib/edgeFunctions';
 import { renderFirstPageToPNG } from '@/utils/pdfPreview';
 
 export default function Upload() {
@@ -407,13 +408,7 @@ export default function Upload() {
       setReviewDrawerOpen(false);
 
       // Invoke edge function to kick off extraction
-      const { error: functionError } = await supabase.functions.invoke('extract-payslip', {
-        body: { job_id: job.id },
-      });
-
-      if (functionError) {
-        throw new Error(functionError.message ?? 'Failed to start extraction');
-      }
+      await invokeExtract({ supabase, body: { job_id: job.id } });
 
       toast({
         title: 'Upload successful',
