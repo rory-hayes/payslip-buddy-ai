@@ -94,6 +94,8 @@ export default function Settings() {
           retention_days: settings.retention_days,
           region: settings.region,
           locale: settings.locale,
+          // @ts-expect-error currency added via migration
+          currency: (settings as any).currency || 'EUR',
         })
         .eq('user_id', user.id);
 
@@ -308,6 +310,26 @@ export default function Settings() {
                   </SelectContent>
                 </Select>
               </div>
+
+            <div className="space-y-2">
+              <Label>Currency</Label>
+              <Select
+                // @ts-expect-error currency added via migration
+                value={(settings as any)?.currency || 'EUR'}
+                onValueChange={(value) =>
+                  setSettings(prev => prev ? { ...(prev as any), currency: value as 'EUR' | 'GBP' } : null)
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="EUR">EUR (€)</SelectItem>
+                  <SelectItem value="GBP">GBP (£)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-sm text-muted-foreground">Default is EUR. Used when extraction doesn't specify currency.</p>
+            </div>
             </CardContent>
           </Card>
 

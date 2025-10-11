@@ -398,6 +398,39 @@ export default function Dashboard() {
             </div>
 
             <ExplainerCard text={latestPayslip.explainer_text || ''} />
+
+            {/* Detailed KVPs section */}
+            {latestPayslip.other_deductions && (
+              <div className="grid gap-6 md:grid-cols-2">
+                <Card className="shadow-card">
+                  <CardHeader>
+                    <CardTitle>Payment Details</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {latestPayslip.other_deductions.pay_items?.map((p, idx) => (
+                      <div key={idx} className="flex justify-between text-sm">
+                        <span>{p.description}</span>
+                        <span>{formatMoney(p.amount ?? 0, latestPayslip.currency)}</span>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+
+                <Card className="shadow-card">
+                  <CardHeader>
+                    <CardTitle>Deductions</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {latestPayslip.other_deductions.items?.map((d, idx) => (
+                      <div key={idx} className="flex justify-between text-sm">
+                        <span>{d.description}</span>
+                        <span>-{formatMoney(d.amount ?? 0, latestPayslip.currency)}</span>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              </div>
+            )}
           </>
         )}
 

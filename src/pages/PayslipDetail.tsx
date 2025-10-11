@@ -438,7 +438,7 @@ export default function PayslipDetail() {
           <ExplainerCard text={payslip.explainer_text} />
         )}
 
-        <Card className="shadow-card">
+              <Card className="shadow-card">
           <CardHeader>
             <CardTitle>Breakdown</CardTitle>
           </CardHeader>
@@ -475,6 +475,39 @@ export default function PayslipDetail() {
             </div>
           </CardContent>
         </Card>
+
+              {/* Payment Details & Deductions */}
+              {payslip.other_deductions && (
+                <div className="grid gap-6 md:grid-cols-2">
+                  <Card className="shadow-card">
+                    <CardHeader>
+                      <CardTitle>Payment Details</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      {payslip.other_deductions.pay_items?.map((p, idx) => (
+                        <div key={idx} className="flex justify-between text-sm">
+                          <span>{p.description}</span>
+                          <span>{formatCurrency(p.amount ?? 0, payslip.currency)}</span>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+
+                  <Card className="shadow-card">
+                    <CardHeader>
+                      <CardTitle>Deductions</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      {payslip.other_deductions.items?.map((d, idx) => (
+                        <div key={idx} className="flex justify-between text-sm">
+                          <span>{d.description}</span>
+                          <span>-{formatCurrency(d.amount ?? 0, payslip.currency)}</span>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
 
         {payslip.pension_employer && (
           <Card className="shadow-card bg-accent/5">

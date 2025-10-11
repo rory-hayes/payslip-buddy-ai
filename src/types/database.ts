@@ -16,7 +16,11 @@ export interface Payslip {
   pension_employee: number | null;
   pension_employer: number | null;
   student_loan: number | null;
-  other_deductions: any[];
+  other_deductions: {
+    items?: Array<{ description: string; amount: number | null }>;
+    pay_items?: Array<{ description: string; amount: number | null; hours?: number | null; rate?: number | null }>;
+    employer_contributions?: { prsi_period?: number | null; prsi_ytd?: number | null; pension_period?: number | null } | null;
+  } | null;
   ytd: any | null;
   confidence_overall: number | null;
   review_required: boolean;
