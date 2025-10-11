@@ -16,6 +16,7 @@ import { Job } from '@/types/database';
 import { ReviewDrawer } from '@/components/ReviewDrawer';
 import type { ReviewContext, ReviewFields } from '@/types/review';
 import { resolveStorageUrl } from '@/lib/storage';
+import { renderFirstPageToPNG } from '@/utils/pdfPreview';
 
 export default function Upload() {
   const supabase = getSupabaseClient();
@@ -370,38 +371,49 @@ export default function Upload() {
 
       if (fileError) throw fileError;
 
-      // Enqueue extraction job
-      const response = await fetch('/jobs', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          kind: 'extract',
+      // Generate and upload preview image
+      const previewBlob = await renderFirstPageToPNG(file);
+      const previewPath = `${user.id}/${fileRecord.id}_preview.png`;
+      const { error: previewError } = await supabase.storage
+        .from('payslips')
+        .upload(previewPath, previewBlob, {
+          upsert: true,
+          contentType: 'image/png',
+        });
+
+      if (previewError) throw previewError;
+
+      // Insert job row directly in Supabase
+      const { data: job, error: jobError } = await supabase
+        .from('jobs')
+        .insert({
+          user_id: user.id,
           file_id: fileRecord.id,
+          kind: 'extract',
+          status: 'queued',
           meta: pdfPassword ? { pdfPassword } : {},
-        }),
-      });
+        })
+        .select('*')
+        .single();
 
-      const payload: unknown = await response.json().catch(() => null);
-
-      if (!response.ok || !payload) {
-        let detail = `Failed to enqueue job (status ${response.status})`;
-        if (payload && typeof payload === 'object' && 'detail' in payload) {
-          const maybeDetail = (payload as { detail?: unknown }).detail;
-          if (typeof maybeDetail === 'string') {
-            detail = maybeDetail;
-          }
-        }
-        throw new Error(detail);
+      if (jobError || !job) {
+        throw jobError ?? new Error('Failed to create extraction job');
       }
 
-      setCurrentJob(payload as Job);
+      setCurrentJob(job as Job);
       setHandledJobCompletion(false);
       setReviewContext(null);
       setActiveReviewJobId(null);
       setReviewDrawerOpen(false);
+
+      // Invoke edge function to kick off extraction
+      const { error: functionError } = await supabase.functions.invoke('extract-payslip', {
+        body: { job_id: job.id },
+      });
+
+      if (functionError) {
+        throw new Error(functionError.message ?? 'Failed to start extraction');
+      }
 
       toast({
         title: 'Upload successful',

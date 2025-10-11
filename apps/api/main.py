@@ -5,7 +5,6 @@ from typing import Any, Dict, Optional
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from redis import Redis
 
 from apps.api.auth import (
     AuthenticatedUser,
@@ -16,7 +15,6 @@ from apps.api.auth import (
 from apps.common.config import get_settings
 from apps.common.models import DossierChecklistItem, DossierMonth, DossierResponse, DossierTotals, JobKind, JobStatus
 from apps.common.supabase import get_supabase
-from apps.worker.celery_app import celery_app
 
 app = FastAPI(title="Payslip Companion API", version="1.0.0")
 
@@ -29,12 +27,7 @@ async def healthz() -> Dict[str, Any]:
         supabase.table("jobs").select("id").limit(1).execute()
     except Exception as exc:  # pragma: no cover - connectivity failure path
         raise HTTPException(status_code=503, detail="Supabase unavailable") from exc
-    try:
-        redis_client = Redis.from_url(settings.redis_url)
-        redis_client.ping()
-    except Exception as exc:  # pragma: no cover - connectivity failure path
-        raise HTTPException(status_code=503, detail="Redis unavailable") from exc
-    return {"ok": True, "redis_url": settings.redis_url}
+    return {"ok": True, "supabase_url": settings.supabase_url}
 
 
 class TriggerJobPayload(BaseModel):
@@ -61,7 +54,6 @@ async def trigger_job(payload: TriggerJobPayload, request: Request) -> Dict[str,
     job_id = job.get("id")
     if job_id is None:  # pragma: no cover - defensive guard
         raise HTTPException(status_code=500, detail="Failed to enqueue job")
-    celery_app.send_task(f"jobs.{payload.kind.value}", args=[job_id])
     return job
 
 
@@ -75,7 +67,7 @@ class UserJobPayload(BaseModel):
 async def create_user_job(
     payload: UserJobPayload, user: AuthenticatedUser = Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """Create a new job for the authenticated user and dispatch its Celery task."""
+    """Create a new job for the authenticated user."""
 
     supabase = get_supabase()
     job = supabase.insert_row(
@@ -92,7 +84,6 @@ async def create_user_job(
     if job_id is None:
         raise HTTPException(status_code=500, detail="Failed to create job")
 
-    celery_app.send_task(f"jobs.{payload.kind.value}", args=[job_id])
     return job
 
 
