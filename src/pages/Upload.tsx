@@ -327,8 +327,9 @@ export default function Upload() {
     setUploading(true);
 
     try {
+      const selectedFile = file;
       // Calculate SHA-256 hash
-      const sha256 = await calculateSHA256(file);
+      const sha256 = await calculateSHA256(selectedFile);
 
       // Check for duplicate
       const { data: existingFiles } = await supabase
@@ -352,7 +353,7 @@ export default function Upload() {
       const filePath = `${user.id}/${fileId}.pdf`;
       const { error: uploadError } = await supabase.storage
         .from('payslips')
-        .upload(filePath, file);
+        .upload(filePath, selectedFile);
 
       if (uploadError) throw uploadError;
 
@@ -364,28 +365,29 @@ export default function Upload() {
           user_id: user.id,
           sha256,
           s3_key_original: filePath,
-          file_name: file.name,
-          file_size: file.size,
+          file_name: selectedFile.name,
+          file_size: selectedFile.size,
         })
         .select()
         .single();
 
-      if (fileError) throw fileError;
+      if (fileError || !fileRecord) throw fileError;
 
-      // Generate and upload preview image
-      const previewBlob = await renderFirstPageToPNG(file);
+      // 1) Generate first-page preview
+      const previewBlob = await renderFirstPageToPNG(selectedFile);
       const previewPath = `${user.id}/${fileRecord.id}_preview.png`;
-      const { error: previewError } = await supabase.storage
+
+      // 2) Upload preview PNG
+      const up = await supabase.storage
         .from('payslips')
-        .upload(previewPath, previewBlob, {
-          upsert: true,
-          contentType: 'image/png',
-        });
+        .upload(previewPath, previewBlob, { upsert: true, contentType: 'image/png' });
+      if (up.error) {
+        console.error('[preview upload failed]', up.error.message);
+        throw up.error;
+      }
 
-      if (previewError) throw previewError;
-
-      // Insert job row directly in Supabase
-      const { data: job, error: jobError } = await supabase
+      // 3) Insert queued extract job
+      const jobIns = await supabase
         .from('jobs')
         .insert({
           user_id: user.id,
@@ -397,18 +399,31 @@ export default function Upload() {
         .select('*')
         .single();
 
-      if (jobError || !job) {
-        throw jobError ?? new Error('Failed to create extraction job');
+      if (jobIns.error) {
+        console.error('[job insert failed]', jobIns.error.message);
+        throw jobIns.error;
       }
+      const job = jobIns.data as Job;
 
-      setCurrentJob(job as Job);
+      setCurrentJob(job);
       setHandledJobCompletion(false);
       setReviewContext(null);
       setActiveReviewJobId(null);
       setReviewDrawerOpen(false);
 
       // Invoke edge function to kick off extraction
-      await invokeExtract({ supabase, body: { job_id: job.id } });
+      try {
+        await invokeExtract({ supabase, body: { job_id: job.id } });
+      } catch (edgeError) {
+        const errorMessage = edgeError instanceof Error ? edgeError.message : String(edgeError);
+        console.error('[edge invoke failed]', errorMessage);
+        await supabase
+          .from('jobs')
+          .update({ status: 'failed', error: errorMessage })
+          .eq('id', job.id);
+        setCurrentJob((prev) => (prev && prev.id === job.id ? { ...prev, status: 'failed', error: errorMessage } : prev));
+        throw edgeError;
+      }
 
       toast({
         title: 'Upload successful',
