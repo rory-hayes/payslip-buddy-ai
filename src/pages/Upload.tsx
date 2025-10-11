@@ -16,7 +16,7 @@ import { Job } from '@/types/database';
 import { ReviewDrawer } from '@/components/ReviewDrawer';
 import type { ReviewContext, ReviewFields } from '@/types/review';
 import { resolveStorageUrl } from '@/lib/storage';
-import { invokeExtract } from '@/lib/edgeFunctions';
+// Edge function is invoked by DB trigger; no direct invoke here
 import { renderFirstPageToPNG } from '@/utils/pdfPreview';
 
 export default function Upload() {
@@ -411,19 +411,7 @@ export default function Upload() {
       setActiveReviewJobId(null);
       setReviewDrawerOpen(false);
 
-      // Invoke edge function to kick off extraction
-      try {
-        await invokeExtract({ supabase, body: { job_id: job.id } });
-      } catch (edgeError) {
-        const errorMessage = edgeError instanceof Error ? edgeError.message : String(edgeError);
-        console.error('[edge invoke failed]', errorMessage);
-        await supabase
-          .from('jobs')
-          .update({ status: 'failed', error: errorMessage })
-          .eq('id', job.id);
-        setCurrentJob((prev) => (prev && prev.id === job.id ? { ...prev, status: 'failed', error: errorMessage } : prev));
-        throw edgeError;
-      }
+      // Edge function will be invoked automatically by database trigger
 
       toast({
         title: 'Upload successful',
