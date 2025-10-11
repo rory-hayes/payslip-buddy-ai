@@ -13,7 +13,7 @@
 | Capability | Implemented | Evidence |
 | --- | --- | --- |
 | PDF intake & antivirus | ✅ | `apps/worker/tasks.py` downloads via signed URL and scans with ClamAV before parsing. |
-| Text/vision extraction | ✅ | Native pdfplumber heuristics merged with GPT-4o-mini (redacted imagery only) and spend-cap enforcement. |
+| Text/vision extraction | ✅ | Native pdfplumber heuristics merged with GPT-5 (redacted imagery only) and spend-cap enforcement. |
 | Redaction previews | ✅ | Regex-based redaction, preview PNG stored at `{user}/{file}_redacted.png`, coordinates saved to `redactions`. |
 | Identity validation | ✅ | Identity rule enforced with ±0.50 tolerance; failures mark job `needs_review`. |
 | Anomaly detection | ✅ | NET_DROP, MISSING_PENSION, TAX_CODE_CHANGE, YTD_REGRESSION, NEW_DEDUCTION implemented with historical context. |

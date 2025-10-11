@@ -72,7 +72,7 @@ class SpendCapExceeded(RuntimeError):
 
 
 class LlmVisionClient:
-    MODEL = "gpt-4o-mini"
+    MODEL = "gpt-4o"
 
     def __init__(self) -> None:
         settings = get_settings()
@@ -146,7 +146,6 @@ class LlmVisionClient:
         cost = getattr(result, "usage", None)
         cost_value = 0.0
         if cost and getattr(cost, "total_tokens", None):
-            # GPT-4o-mini: approximate $0.00015 / token (illustrative)
             cost_value = round(cost.total_tokens * 0.00015, 4)
         self._record_usage(user_id, tokens, cost_value, file_id=file_id)
         return LlmResponse(payload=payload, tokens=tokens, cost=cost_value)
