@@ -11,7 +11,6 @@ from celery import shared_task
 from apps.common.config import get_settings
 from apps.common.models import JobKind, JobStatus
 from apps.common.supabase import get_supabase
-from apps.worker.celery_app import celery_app
 from apps.worker.services.anomalies import PayslipSnapshot, detect_anomalies
 from apps.worker.services.antivirus import AntivirusError, scan_bytes
 from apps.worker.services.cleanup import delete_user_data, retention_cleanup
@@ -360,7 +359,6 @@ def job_extract(job_id: str) -> None:
             "meta": {},
         },
     )
-    celery_app.send_task("jobs.detect_anomalies", args=[follow_up["id"]])
 
 
 @shared_task(name="jobs.detect_anomalies")

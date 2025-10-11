@@ -84,6 +84,7 @@ def test_end_to_end_pipeline(monkeypatch, fake_supabase, fake_storage, fixture_s
     monkeypatch.setattr(
         "apps.worker.tasks.celery_app.send_task",
         lambda name, args=None, kwargs=None: send_calls.append((name, args or [])),
+        raising=False,
     )
 
     def fake_ocr(data, **kwargs):

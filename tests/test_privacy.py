@@ -42,6 +42,7 @@ def test_llm_uses_redacted_preview_and_percent_boxes(monkeypatch, fake_supabase,
     monkeypatch.setattr(
         "apps.worker.tasks.celery_app.send_task",
         lambda name, args=None, kwargs=None: send_calls.append((name, args or [])),
+        raising=False,
     )
 
     fake_supabase.insert_row(
