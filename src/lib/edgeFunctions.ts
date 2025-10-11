@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 export const EDGE_FUNCTIONS = {
-  EXTRACT: 'hyper-endpoint', // Supabase dashboard slug
+  EXTRACT: 'extract-payslip', // Supabase dashboard slug
 } as const;
 
 type InvokeOpts = {
